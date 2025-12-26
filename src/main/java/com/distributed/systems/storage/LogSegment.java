@@ -44,6 +44,31 @@ public class LogSegment {
         return writeOffset;
     }
 
+    public byte[] readAt(long position) throws IOException {
+        // Read the 4-bye length prefix
+        ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
+        int bytesRead = channel.read(lengthBuffer, position);
+
+        if (bytesRead < 4) {
+            throw new IOException("Could not read message length at position: " + position);
+        }
+
+        // Flip the buffer so we can read the integer out of it
+        lengthBuffer.flip();
+        int length = lengthBuffer.getInt();
+
+        // 2. Read the actual content (the message payload)
+        ByteBuffer dataBuffer = ByteBuffer.allocate(length);
+        int dataBytesRead = channel.read(dataBuffer, position + 4); // position + 4 skips the label
+
+        if (dataBytesRead != length) {
+            throw new IOException("Incomplete message read. Expected " + length + " bytes.");
+        }
+
+        return dataBuffer.array();
+
+    }
+
     public void close() throws IOException {
         channel.close();
     }
