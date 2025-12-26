@@ -72,4 +72,8 @@ public class LogSegment {
     public void close() throws IOException {
         channel.close();
     }
+
+    public long getFileSize() throws IOException {
+        return channel.size();
+    }
 }
