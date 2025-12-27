@@ -17,10 +17,9 @@ public class LogSegment {
 
     public LogSegment(Path dataPath) throws IOException {
         // Using FileChannel for high-performance I/O operations.
-        this.channel = FileChannel.open(dataPath,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE);
+        this.channel =
+                FileChannel.open(
+                        dataPath, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
 
         // Initialize the index file
         String indexFileName = dataPath.getFileName().toString().replace(".data", ".index");
@@ -33,8 +32,8 @@ public class LogSegment {
     }
 
     /**
-     * Appends a message to the log using a 4-byte length prefix.
-     * This framing allows the reader to know exactly how much to read.
+     * Appends a message to the log using a 4-byte length prefix. This framing allows the reader to
+     * know exactly how much to read.
      */
     public synchronized long append(byte[] data) throws IOException {
 
@@ -62,7 +61,7 @@ public class LogSegment {
         // Durability; Flush to physical hardware.
         channel.force(true);
 
-        //Return the logical offset (0, 1, 2...) instead of the byte position
+        // Return the logical offset (0, 1, 2...) instead of the byte position
         return currentOffset++;
     }
 
@@ -88,7 +87,6 @@ public class LogSegment {
         }
 
         return dataBuffer.array();
-
     }
 
     public void close() throws IOException {
