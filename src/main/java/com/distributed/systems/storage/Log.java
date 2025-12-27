@@ -42,7 +42,7 @@ public class Log {
     /*
      * Cleanly close the active segment and its index
      * */
-    public void clean() throws IOException {
+    public void close() throws IOException {
         activeSegment.close();
     }
 }
