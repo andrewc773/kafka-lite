@@ -136,4 +136,27 @@ public class LogSegmentTest {
 
         segment.close();
     }
+
+    @Test
+    public void testDeepScanBetweenBookmarks() throws IOException {
+        Path logPath = tempDir.resolve("deep_scan.data");
+        LogSegment segment = new LogSegment(logPath);
+
+        // 1. Write 200 small messages (approx 20KB total)
+        // This will create ~5 index entries.
+        for (int i = 0; i < 200; i++) {
+            segment.append(("Msg-" + i).getBytes());
+        }
+
+        // 2. Read a message that is deep in the middle of a scan
+        // Message 150 is likely far from its closest bookmark.
+        byte[] data = segment.read(150);
+        assertEquals("Msg-150", new String(data), "Should successfully walk to message 150");
+
+        // 3. Read the very last message
+        byte[] lastData = segment.read(199);
+        assertEquals("Msg-199", new String(lastData));
+
+        segment.close();
+    }
 }
