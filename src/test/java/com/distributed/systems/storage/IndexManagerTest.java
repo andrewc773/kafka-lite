@@ -34,16 +34,19 @@ public class IndexManagerTest {
         Path indexPath = tempDir.resolve("test.index");
         IndexManager index = new IndexManager(indexPath);
 
-        // manually add some bookmarks
         index.addEntry(0, 0);       // Msg 0 is at Byte 0
         index.addEntry(100, 5000);  // Msg 100 is at Byte 5000
         index.addEntry(200, 12000); // Msg 200 is at Byte 12000
 
-        // lookup matches
-        assertEquals(5000, index.lookup(100));
+        // we call .physicalPosition() because lookup returns an IndexEntry
+        IndexEntry exactMatch = index.lookup(100);
+        assertEquals(100, exactMatch.logicalOffset());
+        assertEquals(5000, exactMatch.physicalPosition());
 
-        // sparse match (Looking for Msg 150 should give us the Msg 100 bookmark)
-        assertEquals(5000, index.lookup(150));
+        // Sparse match; looking for Msg 150 should return the closest bookmark BEFORE it
+        IndexEntry sparseMatch = index.lookup(150);
+        assertEquals(100, sparseMatch.logicalOffset(), "Should jump to the nearest lower bookmark");
+        assertEquals(5000, sparseMatch.physicalPosition());
 
         index.close();
     }
