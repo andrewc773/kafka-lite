@@ -89,6 +89,40 @@ public class LogSegment {
         return dataBuffer.array();
     }
 
+    public byte[] read(long targetOffset) throws IOException {
+        // jump point from the index
+        IndexEntry entry = indexManager.lookup(targetOffset);
+        long currentOffset = entry.logicalOffset();
+        long physicalPosition = entry.physicalPosition();
+
+        // Linear Scan: Walk from the bookmark to the target
+        while (currentOffset < targetOffset) {
+            ByteBuffer lenBuf = ByteBuffer.allocate(4);
+            int bytesRead = channel.read(lenBuf, physicalPosition);
+
+            // if we hit the end of the file unexpectedly; the log is corrupted/truncated
+            if (bytesRead < 4) {
+                throw new IOException("Unexpected EOF: Could not read message length at position "
+                        + physicalPosition + ". Target offset " + targetOffset + " may not exist.");
+            }
+
+            lenBuf.flip();
+            int msgLen = lenBuf.getInt();
+
+            // Move to the next message
+            physicalPosition += (4 + msgLen);
+            currentOffset++;
+
+            // Check if we've passed the end of the file while walking
+            if (physicalPosition > channel.size()) {
+                throw new IOException("Log truncation detected: Offset " + targetOffset
+                        + " points beyond the current file end.");
+            }
+        }
+
+        return readAt(physicalPosition);
+    }
+
     public void close() throws IOException {
         channel.close();
     }
