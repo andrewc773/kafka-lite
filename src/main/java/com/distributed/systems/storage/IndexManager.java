@@ -31,42 +31,40 @@ public class IndexManager {
         indexChannel.force(true); // Ensure index is flushed to disk
     }
 
-    public long lookup(long targetOffset) throws IOException {
-
+    // Returns {logicalOffset, physicalPosition}
+    public IndexEntry lookup(long targetOffset) throws IOException {
         long fileSize = indexChannel.size();
-
-        if (fileSize == 0) return 0;
+        if (fileSize == 0) return new IndexEntry(0, 0);
 
         long low = 0;
-        long high = (fileSize / 16) - 1; // Number of 16 byte entries
-        long bestPhysicalPosition = 0;
+        long high = (fileSize / 16) - 1;
+
+        // default starting point (the first bookmark)
+        long bestOffset = 0;
+        long bestPosition = 0;
 
         ByteBuffer buffer = ByteBuffer.allocate(16);
 
         while (low <= high) {
             long mid = low + (high - low) / 2;
-
-            // Read the 16-byte entry at the mid index
             buffer.clear();
             indexChannel.read(buffer, mid * 16);
             buffer.flip();
 
-            long offsetAtMid = buffer.getLong(); // offset ID
-            long positionAtMid = buffer.getLong(); //byte address
+            long offsetAtMid = buffer.getLong();
+            long positionAtMid = buffer.getLong();
 
             if (offsetAtMid == targetOffset) {
-                return positionAtMid;
+                return new IndexEntry(offsetAtMid, positionAtMid);
             } else if (offsetAtMid < targetOffset) {
-                bestPhysicalPosition = positionAtMid;
+                bestOffset = offsetAtMid;
+                bestPosition = positionAtMid;
                 low = mid + 1;
             } else {
                 high = mid - 1;
             }
-
         }
-
-        // If no exact match, return the best starting point for a linear scan
-        return bestPhysicalPosition;
+        return new IndexEntry(bestOffset, bestPosition);
     }
 
 
