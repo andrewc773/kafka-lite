@@ -35,7 +35,7 @@ public class LogSegment {
      * Appends a message to the log using a 4-byte length prefix. This framing allows the reader to
      * know exactly how much to read.
      */
-    public synchronized long append(byte[] data) throws IOException {
+    public long append(byte[] data) throws IOException {
 
         // Check if we need to add sparse index entry before writing
         if (bytesSinceLastIndexEntry >= INDEX_INTERVAL_BYTES) {
