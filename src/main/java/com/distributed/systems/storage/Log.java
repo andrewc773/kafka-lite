@@ -28,7 +28,7 @@ public class Log {
     /*
      * Append data to the current active segment.
      * */
-    public long append(byte[] data) throws IOException {
+    public synchronized long append(byte[] data) throws IOException {
         return activeSegment.append(data);
     }
 
