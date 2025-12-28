@@ -32,11 +32,14 @@ public class BrokerServer {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("New client connected: " + clientSocket.getLocalSocketAddress());
 
-                // For now, let's handle one client at a time for simplicity
-                handleClient(clientSocket);
+                Thread clientThread = new Thread(() -> {
+                    handleClient(clientSocket);
+                });
+
+                clientThread.start();
             }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            System.err.println("Server error: " + e.getMessage());
         }
     }
 
