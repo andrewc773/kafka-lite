@@ -1,13 +1,12 @@
 package com.distributed.systems.storage;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.IOException;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 public class IndexManagerTest {
 
@@ -20,7 +19,7 @@ public class IndexManagerTest {
         Path indexPath = tempDir.resolve("broker.index");
 
         // Initialize the segment
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         // Verify both files were created on disk
         assertTrue(java.nio.file.Files.exists(logPath), "Data file should exist");
@@ -50,4 +49,23 @@ public class IndexManagerTest {
 
         index.close();
     }
+
+    @Test
+    public void testGetLastOffset() throws IOException {
+        Path indexPath = tempDir.resolve("test.index");
+        IndexManager index = new IndexManager(indexPath);
+
+        // 1. Check that it throws or handles empty correctly
+        assertTrue(index.isEmpty());
+
+        // 2. Add some entries
+        index.addEntry(100, 1024);
+        index.addEntry(101, 2048);
+        index.addEntry(105, 5000);
+
+        // 3. Verify the last offset is 105
+        assertEquals(105, index.getLastOffset());
+        assertFalse(index.isEmpty());
+    }
+
 }

@@ -25,7 +25,44 @@ public class Log {
         if (!Files.exists(dataDir)) {
             Files.createDirectories(dataDir);
         }
-        createNewSegment(0);
+
+        loadSegments();
+
+        if (segments.isEmpty()) {
+            createNewSegment(0);
+            this.nextOffset = 0;
+        } else {
+            // Resume from where we left off
+            // Find the segment with the highest starting offset
+            Map.Entry<Long, LogSegment> lastEntry = segments.lastEntry();
+            this.activeSegment = lastEntry.getValue();
+
+            // The next offset for the WHOLE log is the last offset of the last segment + 1
+            this.nextOffset = activeSegment.getLastOffset() + 1;
+
+            System.out.println("Resuming log at offset: " + nextOffset);
+        }
+
+    }
+
+    private void loadSegments() throws IOException {
+        try (var files = Files.list(dataDir)) {
+            files.filter(path -> path.toString().endsWith(".data"))
+                    .forEach(path -> {
+                        try {
+                            // Parse offset from filename (e.g., "0000000123.data" -> 123)
+                            String name = path.getFileName().toString();
+                            long baseOffset = Long.parseLong(name.replace(".data", ""));
+                            LogSegment segment = new LogSegment(path, baseOffset);
+
+                            segments.put(baseOffset, segment);
+                            System.out.println("Loaded existing segment: " + name);
+                        } catch (Exception e) {
+                            System.err.println("Failed to load segment: " + path);
+                        }
+
+                    });
+        }
     }
 
     /*
@@ -35,7 +72,7 @@ public class Log {
         String fileName = String.format("%010d.data", baseOffset);
         Path segmentPath = dataDir.resolve(fileName);
 
-        LogSegment newSegment = new LogSegment(segmentPath);
+        LogSegment newSegment = new LogSegment(segmentPath, baseOffset);
         segments.put(baseOffset, newSegment);
         this.activeSegment = newSegment;
     }

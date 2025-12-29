@@ -100,4 +100,31 @@ public class LogTest {
         assertEquals(expectedSize, totalSize, "Total size of all segments should match expected data size");
         log.close();
     }
+
+    @Test
+    public void testLogBootstrapWithMultipleSegments() throws IOException {
+        Path logDir = tempDir.resolve("bootstrap-test");
+
+        // Phase 1: Write enough data to cause a rotation
+        Log log1 = new Log(logDir);
+        for (int i = 0; i < 150; i++) {
+            log1.append(("msg-" + i).getBytes());
+        }
+        long lastOffsetBeforeCrash = 149;
+        log1.close();
+
+        // Phase 2: "Restart" the broker by creating a new Log instance
+        Log log2 = new Log(logDir);
+
+        // Phase 3: Verify continuity
+        // The next offset should be 150
+        assertEquals(150, log2.append("new-msg".getBytes()));
+
+        // Verify we can read from the first segment (Offset 0)
+        // and the new message (Offset 150)
+        assertArrayEquals("msg-0".getBytes(), log2.read(0));
+        assertArrayEquals("new-msg".getBytes(), log2.read(150));
+
+        log2.close();
+    }
 }

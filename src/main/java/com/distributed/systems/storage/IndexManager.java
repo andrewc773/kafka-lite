@@ -71,4 +71,26 @@ public class IndexManager {
     public void close() throws IOException {
         indexChannel.close();
     }
+
+    public boolean isEmpty() throws IOException {
+        return indexChannel.size() == 0;
+    }
+
+    public long getLastOffset() throws IOException {
+        long size = indexChannel.size();
+
+        // Integrity Check: Every entry is exactly 16 bytes.
+        // If it's not a multiple of 16, or it's empty, the index is corrupted.
+        if (size < 16) {
+            throw new IOException("Index file is corrupted or empty. Size: " + size);
+        }
+
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        // Jump to the start of the last 16-byte record
+        indexChannel.read(buffer, size - 16);
+        buffer.flip();
+
+        // The first 8 bytes of the record is the logical offset
+        return buffer.getLong();
+    }
 }
