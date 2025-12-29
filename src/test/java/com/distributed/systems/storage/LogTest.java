@@ -151,4 +151,25 @@ public class LogTest {
 
         log2.close();
     }
+
+    @Test
+    public void testLogClose() throws IOException {
+        Path logDir = tempDir.resolve("close-test");
+        BrokerConfig config = new BrokerConfig(2048, 60000, 4096, 1000);
+        Log log = new Log(logDir, config);
+
+        log.append("test-data".getBytes());
+
+        // Execute close
+        log.close();
+
+        // Verify we can't append anymore (should throw exception)
+        assertThrows(Exception.class, () -> log.append("more-data".getBytes()),
+                "Appending after close should fail");
+
+        // Verify files are unlockable/deletable (especially important on Windows)
+        // If the FileChannel wasn't closed, this delete might fail on some OSs.
+        assertTrue(Files.deleteIfExists(logDir.resolve("0000000000.data")),
+                "Data file should be deletable after log is closed");
+    }
 }
