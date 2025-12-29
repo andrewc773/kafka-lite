@@ -30,16 +30,36 @@ public class LogSegment {
 
         this.indexManager = new IndexManager(indexPath);
 
-        if (indexManager.isEmpty()) {
-            this.currentOffset = baseOffset;
-        } else {
-            // If we are resuming, the next offset to write is the one after the last one on disk
+        if (!indexManager.isEmpty()) {
             this.currentOffset = indexManager.getLastOffset() + 1;
+        } else if (channel.size() > 0) {
+            // If we are resuming, the next offset to write is the one after the last one on disk
+            this.currentOffset = recoverOffsetFromDataFile();
+        } else {
+            this.currentOffset = baseOffset;
         }
 
         // Ensure we append to the end if the file exists.
         this.currentPosition = channel.size();
     }
+
+    private long recoverOffsetFromDataFile() throws IOException {
+        long tempOffset = baseOffset;
+        long tempPos = 0;
+        long fileSize = channel.size();
+
+        while (tempPos < fileSize) {
+            ByteBuffer lenBuf = ByteBuffer.allocate(4);
+            if (channel.read(lenBuf, tempPos) < 4) break;
+            lenBuf.flip();
+            int len = lenBuf.getInt();
+
+            tempPos += (4 + len);
+            tempOffset++;
+        }
+        return tempOffset;
+    }
+
 
     /**
      * Appends a message to the log using a 4-byte length prefix. This framing allows the reader to
