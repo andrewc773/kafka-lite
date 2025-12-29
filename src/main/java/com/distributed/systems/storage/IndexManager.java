@@ -1,5 +1,7 @@
 package com.distributed.systems.storage;
 
+import com.distributed.systems.util.Logger;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -9,6 +11,8 @@ import java.nio.file.StandardOpenOption;
 public class IndexManager {
     private final FileChannel indexChannel;
     private static final int ENTRY_SIZE = 16; // 8 bytes for offset, 8 for position
+    private final Path indexPath;
+
 
     public IndexManager(Path indexPath) throws IOException {
         // Open the index file for reading and writing
@@ -18,6 +22,10 @@ public class IndexManager {
                         StandardOpenOption.CREATE,
                         StandardOpenOption.READ,
                         StandardOpenOption.WRITE);
+
+        this.indexPath = indexPath;
+
+        Logger.logBootstrap("Index initialized: " + indexPath.getFileName());
     }
 
     // Appends a new bookmark to the index.
@@ -29,6 +37,8 @@ public class IndexManager {
 
         indexChannel.write(buffer, indexChannel.size());
         indexChannel.force(true); // Ensure index is flushed to disk
+
+        Logger.logStorage("Index entry added: Offset " + offset + " -> Position " + position);
     }
 
     // Returns {logicalOffset, physicalPosition}
@@ -55,6 +65,7 @@ public class IndexManager {
             long positionAtMid = buffer.getLong();
 
             if (offsetAtMid == targetOffset) {
+                Logger.logStorage("Index hit: Target " + targetOffset + " found at pos " + positionAtMid);
                 return new IndexEntry(offsetAtMid, positionAtMid);
             } else if (offsetAtMid < targetOffset) {
                 bestOffset = offsetAtMid;
@@ -64,11 +75,14 @@ public class IndexManager {
                 high = mid - 1;
             }
         }
+
+        Logger.logStorage("Index search: Target " + targetOffset + " -> Nearest offset: " + bestOffset);
         return new IndexEntry(bestOffset, bestPosition);
     }
 
 
     public void close() throws IOException {
+        Logger.logStorage("Closing index: " + indexPath.getFileName());
         indexChannel.close();
     }
 
@@ -82,6 +96,7 @@ public class IndexManager {
         // Integrity Check: Every entry is exactly 16 bytes.
         // If it's not a multiple of 16, or it's empty, the index is corrupted.
         if (size < 16) {
+            Logger.logError("Index corruption detected: File " + indexPath.getFileName() + " size is " + size);
             throw new IOException("Index file is corrupted or empty. Size: " + size);
         }
 

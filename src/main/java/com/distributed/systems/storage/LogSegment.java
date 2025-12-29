@@ -1,5 +1,7 @@
 package com.distributed.systems.storage;
 
+import com.distributed.systems.util.Logger;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -23,6 +25,9 @@ public class LogSegment {
         this.dataPath = dataPath;
         this.indexIntervalBytes = indexIntervalBytes;
         // Using FileChannel for high-performance I/O operations.
+
+        Logger.logBootstrap("Opening segment: " + dataPath.getFileName() + " (Base Offset: " + baseOffset + ")");
+
         this.channel =
                 FileChannel.open(
                         dataPath, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
@@ -35,9 +40,11 @@ public class LogSegment {
 
         if (!indexManager.isEmpty()) {
             this.currentOffset = indexManager.getLastOffset() + 1;
+            Logger.logBootstrap("Segment " + baseOffset + " recovered offset from Index: " + currentOffset);
         } else if (channel.size() > 0) {
             // If we are resuming, the next offset to write is the one after the last one on disk
             this.currentOffset = recoverOffsetFromDataFile();
+            Logger.logBootstrap("Segment " + baseOffset + " recovered offset via Linear Scan: " + currentOffset);
         } else {
             this.currentOffset = baseOffset;
         }
@@ -123,6 +130,8 @@ public class LogSegment {
     }
 
     public byte[] read(long targetOffset) throws IOException {
+        Logger.logStorage("Reading offset " + targetOffset + " from segment " + baseOffset);
+
         // jump-point from the index
         IndexEntry entry = indexManager.lookup(targetOffset);
         long currentOffset = entry.logicalOffset();
@@ -135,6 +144,7 @@ public class LogSegment {
 
             // if we hit the end of the file unexpectedly; the log is corrupted/truncated
             if (bytesRead < 4) {
+                Logger.logError("Unexpected EOF at pos " + physicalPosition + " while looking for offset " + targetOffset);
                 throw new IOException("Unexpected EOF: Could not read message length at position "
                         + physicalPosition + ". Target offset " + targetOffset + " may not exist.");
             }
@@ -148,6 +158,7 @@ public class LogSegment {
 
             // Check if we've passed the end of the file while walking
             if (physicalPosition > channel.size()) {
+                Logger.logError("Log truncation detected for offset " + targetOffset);
                 throw new IOException("Log truncation detected: Offset " + targetOffset
                         + " points beyond the current file end.");
             }
@@ -157,7 +168,9 @@ public class LogSegment {
     }
 
     public void close() throws IOException {
+        Logger.logStorage("Closing file channel: " + dataPath.getFileName());
         channel.close();
+        indexManager.close();
     }
 
     public long getFileSize() throws IOException {
