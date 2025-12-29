@@ -1,5 +1,6 @@
 package com.distributed.systems.network;
 
+import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;
 
 import java.io.BufferedReader;
@@ -17,7 +18,7 @@ public class BrokerServer {
 
     public BrokerServer(int port, String dataDir) throws IOException {
         this.port = port;
-        this.log = new Log(Paths.get(dataDir));
+        this.log = new Log(Paths.get(dataDir), new BrokerConfig());
     }
 
     public void start() {

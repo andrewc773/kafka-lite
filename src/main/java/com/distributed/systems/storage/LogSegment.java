@@ -13,12 +13,13 @@ public class LogSegment {
 
     private final IndexManager indexManager;
     private int bytesSinceLastIndexEntry = 0;
-    private static final int INDEX_INTERVAL_BYTES = 4096; // 4KB Sparse Interval (normal page size)
+    private final long indexIntervalBytes; // 4KB Sparse Interval (normal page size)
     private long currentOffset; // Tracks the logical message ID
 
-    public LogSegment(Path dataPath, long baseOffset) throws IOException {
+    public LogSegment(Path dataPath, long baseOffset, long indexIntervalBytes) throws IOException {
 
         this.baseOffset = baseOffset;
+        this.indexIntervalBytes = indexIntervalBytes;
         // Using FileChannel for high-performance I/O operations.
         this.channel =
                 FileChannel.open(
@@ -68,7 +69,7 @@ public class LogSegment {
     public long append(byte[] data) throws IOException {
 
         // Check if we need to add sparse index entry before writing
-        if (bytesSinceLastIndexEntry >= INDEX_INTERVAL_BYTES) {
+        if (bytesSinceLastIndexEntry >= indexIntervalBytes) {
             indexManager.addEntry(currentOffset, currentPosition);
             bytesSinceLastIndexEntry = 0;
         }

@@ -13,10 +13,12 @@ public class LogSegmentTest {
     @TempDir
     Path tempDir; // JUnit handles creating and deleting this folder for you
 
+    private static final long MAX_SEGMENT_SIZE = 2048;
+
     @Test
     public void testAppendAndReadIntegrity() throws IOException {
         Path logPath = tempDir.resolve("test.data");
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         byte[] message1 = "Apples".getBytes();
         byte[] message2 = "Bananas".getBytes();
@@ -37,7 +39,7 @@ public class LogSegmentTest {
     @Test
     public void testLargeMessageSequence() throws IOException {
         Path logPath = tempDir.resolve("large.data");
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         for (int i = 0; i < 100; i++) {
             byte[] data = ("Message-Content-Number-" + i).getBytes();
@@ -57,7 +59,7 @@ public class LogSegmentTest {
     @Test
     public void testReadBetweenBookmarks() throws IOException {
         Path logPath = tempDir.resolve("test.data");
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         // Write 20 messages, each 1KB.
         // This creates ~20KB of data, meaning the index will have roughly 5 entries (every 4KB).
@@ -77,7 +79,7 @@ public class LogSegmentTest {
     @Test
     public void testReadNonExistentOffsetThrowsException() throws IOException {
         Path logPath = tempDir.resolve("bounds.data");
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         segment.append("Message-0".getBytes());
         segment.append("Message-1".getBytes());
@@ -93,7 +95,7 @@ public class LogSegmentTest {
     @Test
     public void testBoundaryReads() throws IOException {
         Path logPath = tempDir.resolve("bounds.data");
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         segment.append("First".getBytes());  // Offset 0
         segment.append("Middle".getBytes()); // Offset 1
@@ -108,7 +110,7 @@ public class LogSegmentTest {
     @Test
     public void testDeepScanBetweenBookmarks() throws IOException {
         Path logPath = tempDir.resolve("deep_scan.data");
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         // 1. Write 200 small messages (approx 20KB total)
         // This will create ~5 index entries.
@@ -133,13 +135,13 @@ public class LogSegmentTest {
         Path segmentPath = tempDir.resolve("0000000000.data");
 
         // 1. Create a segment, write 2 messages, and close it
-        LogSegment seg1 = new LogSegment(segmentPath, 0);
+        LogSegment seg1 = new LogSegment(segmentPath, 0, MAX_SEGMENT_SIZE);
         seg1.append("Message 1".getBytes()); // Offset 0
         seg1.append("Message 2".getBytes()); // Offset 1
         seg1.close();
 
         // 2. Create a NEW instance pointing to the same file
-        LogSegment seg2 = new LogSegment(segmentPath, 0);
+        LogSegment seg2 = new LogSegment(segmentPath, 0, MAX_SEGMENT_SIZE);
 
         // 3. Verify it resumed at the correct offset
         // append() should return 2
@@ -156,7 +158,7 @@ public class LogSegmentTest {
         long baseOffset = 100;
 
         // Test New Segment
-        LogSegment segment = new LogSegment(segmentPath, baseOffset);
+        LogSegment segment = new LogSegment(segmentPath, baseOffset, MAX_SEGMENT_SIZE);
         // Before any appends, the last offset is baseOffset - 1 (99)
         assertEquals(baseOffset - 1, segment.getLastOffset(),
                 "New segment should report baseOffset - 1 as last offset");
@@ -173,7 +175,7 @@ public class LogSegmentTest {
 
         // test Recovery Last Offset
         // Re-open the same file to simulate a restart
-        LogSegment recoveredSegment = new LogSegment(segmentPath, baseOffset);
+        LogSegment recoveredSegment = new LogSegment(segmentPath, baseOffset, MAX_SEGMENT_SIZE);
         assertEquals(102, recoveredSegment.getLastOffset(),
                 "Recovered segment should correctly identify the last offset from disk");
 
