@@ -17,10 +17,11 @@ public class BrokerConfig {
     }
 
     // Constructor for Unit Tests
-    public BrokerConfig(long maxSegmentSize, long retentionMs, long indexInterval) {
+    public BrokerConfig(long maxSegmentSize, long retentionMs, long indexInterval, long cleanupInterval) {
         properties.setProperty("storage.max.segment.size", String.valueOf(maxSegmentSize));
         properties.setProperty("storage.retention.ms", String.valueOf(retentionMs));
         properties.setProperty("storage.index.interval.bytes", String.valueOf(indexInterval));
+        properties.setProperty("storage.cleanup.interval.ms", String.valueOf(cleanupInterval));
     }
 
     public long getMaxSegmentSize() {
