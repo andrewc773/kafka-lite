@@ -16,7 +16,7 @@ public class LogSegmentTest {
     @Test
     public void testAppendAndReadIntegrity() throws IOException {
         Path logPath = tempDir.resolve("test.data");
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         byte[] message1 = "Apples".getBytes();
         byte[] message2 = "Bananas".getBytes();
@@ -37,7 +37,7 @@ public class LogSegmentTest {
     @Test
     public void testLargeMessageSequence() throws IOException {
         Path logPath = tempDir.resolve("large.data");
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         for (int i = 0; i < 100; i++) {
             byte[] data = ("Message-Content-Number-" + i).getBytes();
@@ -57,7 +57,7 @@ public class LogSegmentTest {
     @Test
     public void testReadBetweenBookmarks() throws IOException {
         Path logPath = tempDir.resolve("test.data");
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         // Write 20 messages, each 1KB.
         // This creates ~20KB of data, meaning the index will have roughly 5 entries (every 4KB).
@@ -77,7 +77,7 @@ public class LogSegmentTest {
     @Test
     public void testReadNonExistentOffsetThrowsException() throws IOException {
         Path logPath = tempDir.resolve("bounds.data");
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         segment.append("Message-0".getBytes());
         segment.append("Message-1".getBytes());
@@ -93,7 +93,7 @@ public class LogSegmentTest {
     @Test
     public void testBoundaryReads() throws IOException {
         Path logPath = tempDir.resolve("bounds.data");
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         segment.append("First".getBytes());  // Offset 0
         segment.append("Middle".getBytes()); // Offset 1
@@ -108,7 +108,7 @@ public class LogSegmentTest {
     @Test
     public void testDeepScanBetweenBookmarks() throws IOException {
         Path logPath = tempDir.resolve("deep_scan.data");
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         // 1. Write 200 small messages (approx 20KB total)
         // This will create ~5 index entries.

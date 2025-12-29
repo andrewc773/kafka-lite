@@ -9,13 +9,16 @@ import java.nio.file.StandardOpenOption;
 public class LogSegment {
     private final FileChannel channel;
     private long currentPosition;
+    private final long baseOffset; // Identity of the segment
 
     private final IndexManager indexManager;
     private int bytesSinceLastIndexEntry = 0;
     private static final int INDEX_INTERVAL_BYTES = 4096; // 4KB Sparse Interval (normal page size)
-    private long currentOffset = 0; // Tracks the logical message ID
+    private long currentOffset; // Tracks the logical message ID
 
-    public LogSegment(Path dataPath) throws IOException {
+    public LogSegment(Path dataPath, long baseOffset) throws IOException {
+
+        this.baseOffset = baseOffset;
         // Using FileChannel for high-performance I/O operations.
         this.channel =
                 FileChannel.open(
@@ -26,6 +29,13 @@ public class LogSegment {
         Path indexPath = dataPath.getParent().resolve(indexFileName);
 
         this.indexManager = new IndexManager(indexPath);
+
+        if (indexManager.isEmpty()) {
+            this.currentOffset = baseOffset;
+        } else {
+            // If we are resuming, the next offset to write is the one after the last one on disk
+            this.currentOffset = indexManager.getLastOffset() + 1;
+        }
 
         // Ensure we append to the end if the file exists.
         this.currentPosition = channel.size();
@@ -90,7 +100,7 @@ public class LogSegment {
     }
 
     public byte[] read(long targetOffset) throws IOException {
-        // jump point from the index
+        // jump-point from the index
         IndexEntry entry = indexManager.lookup(targetOffset);
         long currentOffset = entry.logicalOffset();
         long physicalPosition = entry.physicalPosition();
@@ -129,5 +139,11 @@ public class LogSegment {
 
     public long getFileSize() throws IOException {
         return channel.size();
+    }
+
+    public long getLastOffset() {
+        // If the index is empty, the next offset is the base offset of the file
+        // Otherwise, it's the last entry in our index + 1
+        return currentOffset - 1;
     }
 }

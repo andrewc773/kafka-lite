@@ -20,7 +20,7 @@ public class IndexManagerTest {
         Path indexPath = tempDir.resolve("broker.index");
 
         // Initialize the segment
-        LogSegment segment = new LogSegment(logPath);
+        LogSegment segment = new LogSegment(logPath, 0);
 
         // Verify both files were created on disk
         assertTrue(java.nio.file.Files.exists(logPath), "Data file should exist");
@@ -50,4 +50,5 @@ public class IndexManagerTest {
 
         index.close();
     }
+
 }
