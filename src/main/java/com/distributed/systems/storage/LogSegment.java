@@ -15,10 +15,12 @@ public class LogSegment {
     private int bytesSinceLastIndexEntry = 0;
     private final long indexIntervalBytes; // 4KB Sparse Interval (normal page size)
     private long currentOffset; // Tracks the logical message ID
+    private Path dataPath;
 
     public LogSegment(Path dataPath, long baseOffset, long indexIntervalBytes) throws IOException {
 
         this.baseOffset = baseOffset;
+        this.dataPath = dataPath;
         this.indexIntervalBytes = indexIntervalBytes;
         // Using FileChannel for high-performance I/O operations.
         this.channel =
@@ -166,5 +168,9 @@ public class LogSegment {
         // If the index is empty, the next offset is the base offset of the file
         // Otherwise, it's the last entry in our index + 1
         return currentOffset - 1;
+    }
+
+    public Path getDataPath() {
+        return this.dataPath;
     }
 }

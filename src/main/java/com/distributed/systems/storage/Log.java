@@ -7,6 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manages high-level storage operations across segments.
@@ -20,6 +23,8 @@ public class Log {
     // Maps startingOffset -> LogSegment
     private final ConcurrentSkipListMap<Long, LogSegment> segments = new ConcurrentSkipListMap<>();
     private long nextOffset = 0;
+
+    private final ScheduledExecutorService janitor = Executors.newSingleThreadScheduledExecutor();
 
     public Log(Path dataDir, BrokerConfig config) throws IOException {
         this.dataDir = dataDir;
@@ -45,6 +50,16 @@ public class Log {
 
             System.out.println("Resuming log at offset: " + nextOffset);
         }
+
+        long interval = config.getCleanupIntervalMs();
+        janitor.scheduleAtFixedRate(() -> {
+            try {
+                cleanup();
+            } catch (IOException e) {
+                // Use logger here
+                //Logger.logError("Janitor failed to run cleanup: " + e.getMessage());
+            }
+        }, interval, interval, TimeUnit.MILLISECONDS);
 
     }
 
@@ -120,10 +135,70 @@ public class Log {
         return entry.getValue().read(offset);
     }
 
+    public synchronized void cleanup() throws IOException {
+        long now = System.currentTimeMillis();
+        long retentionMs = config.getRetentionMs();
+
+        //TODO: ADD LOGGER HERE
+        // "Scanning for expired segments..."
+
+        var iterator = segments.entrySet().iterator();
+
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            long baseOffset = entry.getKey();
+            LogSegment segment = entry.getValue();
+
+            //skip active segment
+            if (segment == activeSegment) {
+                continue;
+            }
+
+            try {
+
+                long lastModified = Files.getLastModifiedTime(segment.getDataPath()).toMillis();
+
+                if (now - lastModified > retentionMs) {
+                    //evicting expired segment
+
+                    //release file locks
+                    segment.close();
+
+                    //delete both files for the segment. index and data files
+                    Files.deleteIfExists(segment.getDataPath());
+
+                    Path indexPath = segment.getDataPath().resolveSibling(segment.getDataPath().getFileName().toString().replace(".data", ".index"));
+
+                    Files.deleteIfExists(indexPath);
+
+                    iterator.remove();
+                }
+
+
+            } catch (IOException e) {
+                //Logger.logError("Cleanup failed for segment " + entry.getKey() + ": " + e.getMessage());
+            }
+
+        }
+
+
+    }
+
     /*
      * Cleanly close the active segment(s) and indexes
      * */
     public void close() throws IOException {
+
+        //safely shutdown manager
+        janitor.shutdown();
+        try {
+            if (!janitor.awaitTermination(5, TimeUnit.SECONDS)) {
+                janitor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            janitor.shutdownNow();
+        }
+
         for (LogSegment segment : segments.values()) {
             segment.close();
         }

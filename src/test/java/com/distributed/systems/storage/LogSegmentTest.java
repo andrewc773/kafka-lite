@@ -186,4 +186,16 @@ public class LogSegmentTest {
 
         recoveredSegment.close();
     }
+
+    @Test
+    public void testGetDataPath() throws IOException {
+        Path segmentPath = tempDir.resolve("0000000000.data");
+        LogSegment segment = new LogSegment(segmentPath, 0, 4096);
+
+        // Verify the path matches what was passed in
+        assertEquals(segmentPath, segment.getDataPath(),
+                "Segment should accurately report its data file path");
+
+        segment.close();
+    }
 }

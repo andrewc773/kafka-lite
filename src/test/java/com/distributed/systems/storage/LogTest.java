@@ -17,38 +17,38 @@ public class LogTest {
 
     // Helper to create a standard config for tests
     private BrokerConfig createDefaultConfig() {
-        return new BrokerConfig(2048, 600000, 4096);
+        return new BrokerConfig(2048, 600000, 4096, 30000);
     }
 
-//    @Test
-//    public void testJanitorRetention() throws IOException, InterruptedException {
-//        Path logDir = tempDir.resolve("janitor-test");
-//        // CONFIG: 100 byte segments, 500ms retention, 100ms cleanup interval
-//        BrokerConfig janitorConfig = new BrokerConfig(100, 500, 4096);
-//        Log log = new Log(logDir, janitorConfig);
-//
-//        // 1. Create multiple segments
-//        log.append(new byte[60]); // Segment 0
-//        log.append(new byte[60]); // Rotates, Segment 1 starts
-//        log.append(new byte[60]); // Rotates, Segment 2 starts (Active)
-//
-//        assertEquals(3, log.getSegmentCount(), "Should have 3 segments initially");
-//
-//        // 2. Wait for retention (500ms) + buffer for cleanup interval
-//        Thread.sleep(1000);
-//
-//        // 3. Verify cleanup.
-//        // Important: Segment 2 is the 'activeSegment', so it must NOT be deleted.
-//        // Segments 0 and 1 should be gone.
-//        assertTrue(log.getSegmentCount() < 3, "Janitor should have deleted expired segments");
-//        assertEquals(1, log.getSegmentCount(), "Only the active segment should remain");
-//
-//        log.close();
-//    }
+    @Test
+    public void testJanitorRetention() throws IOException, InterruptedException {
+        Path logDir = tempDir.resolve("janitor-test");
+        // CONFIG: 100 byte segments, 500ms retention, 100ms cleanup interval
+        BrokerConfig janitorConfig = new BrokerConfig(100, 500, 4096, 100);
+        Log log = new Log(logDir, janitorConfig);
+
+        // Create multiple segments
+        log.append(new byte[60]); // Segment 0
+        log.append(new byte[60]); // Rotates, Segment 1 starts
+        log.append(new byte[60]); // Rotates, Segment 2 starts (Active)
+
+        assertEquals(3, log.getSegmentCount(), "Should have 3 segments initially");
+
+        //  Wait for retention (500ms) + buffer for cleanup interval (100ms)
+        Thread.sleep(1000);
+
+        // verify cleanup.
+        // Segment 2 is the 'activeSegment', so it must NOT be deleted.
+        // Segments 0 and 1 should be gone.
+        assertTrue(log.getSegmentCount() < 3, "Janitor should have deleted expired segments");
+        assertEquals(1, log.getSegmentCount(), "Only the active segment should remain");
+
+        log.close();
+    }
 
     @Test
     public void testRotationWithConfig() throws IOException {
-        BrokerConfig testConfig = new BrokerConfig(100, 60000, 4096);
+        BrokerConfig testConfig = new BrokerConfig(100, 60000, 4096, 30000);
         Log log = new Log(tempDir, testConfig);
 
         log.append(new byte[60]);
@@ -150,5 +150,26 @@ public class LogTest {
         assertArrayEquals("new-msg".getBytes(), log2.read(150));
 
         log2.close();
+    }
+
+    @Test
+    public void testLogClose() throws IOException {
+        Path logDir = tempDir.resolve("close-test");
+        BrokerConfig config = new BrokerConfig(2048, 60000, 4096, 1000);
+        Log log = new Log(logDir, config);
+
+        log.append("test-data".getBytes());
+
+        // Execute close
+        log.close();
+
+        // Verify we can't append anymore (should throw exception)
+        assertThrows(Exception.class, () -> log.append("more-data".getBytes()),
+                "Appending after close should fail");
+
+        // Verify files are unlockable/deletable (especially important on Windows)
+        // If the FileChannel wasn't closed, this delete might fail on some OSs.
+        assertTrue(Files.deleteIfExists(logDir.resolve("0000000000.data")),
+                "Data file should be deletable after log is closed");
     }
 }
