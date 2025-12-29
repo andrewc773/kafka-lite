@@ -13,13 +13,16 @@ public class IndexManagerTest {
     @TempDir
     Path tempDir;
 
+    private static final long MAX_SEGMENT_SIZE = 2048;
+
+
     @Test
     public void testFileInitialization() throws IOException {
         Path logPath = tempDir.resolve("broker.data");
         Path indexPath = tempDir.resolve("broker.index");
 
         // Initialize the segment
-        LogSegment segment = new LogSegment(logPath, 0);
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
 
         // Verify both files were created on disk
         assertTrue(java.nio.file.Files.exists(logPath), "Data file should exist");

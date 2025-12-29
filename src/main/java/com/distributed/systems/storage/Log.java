@@ -1,5 +1,7 @@
 package com.distributed.systems.storage;
 
+import com.distributed.systems.config.BrokerConfig;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,16 +13,17 @@ import java.util.concurrent.ConcurrentSkipListMap;
  */
 public class Log {
 
-    private static final long MAX_SEGMENT_SIZE = 2048;
     private final Path dataDir;
+    private final BrokerConfig config;
 
     private LogSegment activeSegment;
     // Maps startingOffset -> LogSegment
     private final ConcurrentSkipListMap<Long, LogSegment> segments = new ConcurrentSkipListMap<>();
     private long nextOffset = 0;
 
-    public Log(Path dataDir) throws IOException {
+    public Log(Path dataDir, BrokerConfig config) throws IOException {
         this.dataDir = dataDir;
+        this.config = config;
         // ensure the folder exists
         if (!Files.exists(dataDir)) {
             Files.createDirectories(dataDir);
@@ -53,7 +56,7 @@ public class Log {
                             // Parse offset from filename (e.g., "0000000123.data" -> 123)
                             String name = path.getFileName().toString();
                             long baseOffset = Long.parseLong(name.replace(".data", ""));
-                            LogSegment segment = new LogSegment(path, baseOffset);
+                            LogSegment segment = new LogSegment(path, baseOffset, config.getIndexIntervalBytes());
 
                             segments.put(baseOffset, segment);
                             System.out.println("Loaded existing segment: " + name);
@@ -72,7 +75,7 @@ public class Log {
         String fileName = String.format("%010d.data", baseOffset);
         Path segmentPath = dataDir.resolve(fileName);
 
-        LogSegment newSegment = new LogSegment(segmentPath, baseOffset);
+        LogSegment newSegment = new LogSegment(segmentPath, baseOffset, config.getIndexIntervalBytes());
         segments.put(baseOffset, newSegment);
         this.activeSegment = newSegment;
     }
@@ -81,8 +84,11 @@ public class Log {
      * Append data to the current active segment.
      * */
     public synchronized long append(byte[] data) throws IOException {
-        // Check if we need to rotate BEFORE appending
-        if (activeSegment.getFileSize() >= MAX_SEGMENT_SIZE) {
+        // Calculate total size: Current size + 4 bytes (length prefix) + data length
+        long estimatedSizeAfterAppend = activeSegment.getFileSize() + 4 + data.length;
+
+        // Rotate if this append would push us over the limit
+        if (estimatedSizeAfterAppend > config.getMaxSegmentSize()) {
             rotate();
         }
 
@@ -121,5 +127,9 @@ public class Log {
         for (LogSegment segment : segments.values()) {
             segment.close();
         }
+    }
+
+    public long getSegmentCount() {
+        return segments.size();
     }
 }
