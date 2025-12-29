@@ -1,6 +1,7 @@
 package com.distributed.systems.storage;
 
 import com.distributed.systems.config.BrokerConfig;
+import com.distributed.systems.util.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -48,7 +49,7 @@ public class Log {
             // The next offset for the WHOLE log is the last offset of the last segment + 1
             this.nextOffset = activeSegment.getLastOffset() + 1;
 
-            System.out.println("Resuming log at offset: " + nextOffset);
+            Logger.logBootstrap("Resuming log at offset: " + nextOffset);
         }
 
         long interval = config.getCleanupIntervalMs();
@@ -56,8 +57,7 @@ public class Log {
             try {
                 cleanup();
             } catch (IOException e) {
-                // Use logger here
-                //Logger.logError("Janitor failed to run cleanup: " + e.getMessage());
+                Logger.logError("Janitor failed to run cleanup: " + e.getMessage());
             }
         }, interval, interval, TimeUnit.MILLISECONDS);
 
@@ -74,9 +74,9 @@ public class Log {
                             LogSegment segment = new LogSegment(path, baseOffset, config.getIndexIntervalBytes());
 
                             segments.put(baseOffset, segment);
-                            System.out.println("Loaded existing segment: " + name);
+                            Logger.logBootstrap("Loaded existing segment: " + name);
                         } catch (Exception e) {
-                            System.err.println("Failed to load segment: " + path);
+                            Logger.logError("Failed to load segment: " + path);
                         }
 
                     });
@@ -114,7 +114,7 @@ public class Log {
 
     /*Rotates logs*/
     private void rotate() throws IOException {
-        System.out.println("Rotating log segment at offset: " + nextOffset);
+        Logger.logStorage("Rotating log segment at offset: " + nextOffset);
         // We can consider marking old one as read-only here
         createNewSegment(nextOffset);
     }
@@ -139,8 +139,7 @@ public class Log {
         long now = System.currentTimeMillis();
         long retentionMs = config.getRetentionMs();
 
-        //TODO: ADD LOGGER HERE
-        // "Scanning for expired segments..."
+        Logger.logJanitor("Scanning for expired segments...");
 
         var iterator = segments.entrySet().iterator();
 
@@ -160,6 +159,7 @@ public class Log {
 
                 if (now - lastModified > retentionMs) {
                     //evicting expired segment
+                    Logger.logJanitor("Evicting expired segment: " + segment.getDataPath().getFileName());
 
                     //release file locks
                     segment.close();
@@ -176,7 +176,7 @@ public class Log {
 
 
             } catch (IOException e) {
-                //Logger.logError("Cleanup failed for segment " + entry.getKey() + ": " + e.getMessage());
+                Logger.logError("Cleanup failed for segment " + entry.getKey() + ": " + e.getMessage());
             }
 
         }
