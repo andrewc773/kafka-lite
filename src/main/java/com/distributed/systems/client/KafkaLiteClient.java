@@ -38,30 +38,37 @@ public class KafkaLiteClient implements AutoCloseable {
      * @return The offset assigned to the message.
      */
     public long produce(String data) throws IOException {
-        //sending to server
-        out.println(Protocol.CMD_PRODUCE + " " + data);
-        String response = in.readLine();
+        
+        return executeWithRetry(() -> {
+            //sending to server
+            out.println(Protocol.CMD_PRODUCE + " " + data);
+            String response = in.readLine();
 
-        if (response != null && response.startsWith(Protocol.RESP_SUCCESS_PREFIX)) {
-            return Long.parseLong(response.substring(Protocol.RESP_SUCCESS_PREFIX.length()).trim());
-        } else {
-            throw new IOException("Server error: " + response);
-        }
+            if (response != null && response.startsWith(Protocol.RESP_SUCCESS_PREFIX)) {
+                return Long.parseLong(response.substring(Protocol.RESP_SUCCESS_PREFIX.length()).trim());
+            } else {
+                throw new IOException("Server error: " + response);
+            }
+        });
+
     }
 
     /**
      * Retrieves a message from the broker by offset.
      */
     public String consume(long offset) throws IOException {
-        //sending to server
-        out.println(Protocol.CMD_CONSUME + " " + offset);
-        String response = in.readLine();
 
-        if (response != null && response.startsWith(Protocol.RESP_DATA_PREFIX)) {
-            return response.substring(Protocol.RESP_DATA_PREFIX.length());
-        } else {
-            throw new IOException("Server error: " + response);
-        }
+        return executeWithRetry(() -> {
+            //sending to server
+            out.println(Protocol.CMD_CONSUME + " " + offset);
+            String response = in.readLine();
+
+            if (response != null && response.startsWith(Protocol.RESP_DATA_PREFIX)) {
+                return response.substring(Protocol.RESP_DATA_PREFIX.length());
+            } else {
+                throw new IOException("Server error: " + response);
+            }
+        });
     }
 
     @Override
@@ -76,6 +83,8 @@ public class KafkaLiteClient implements AutoCloseable {
         T execute() throws IOException;
     }
 
+    /* Helper to execute network action and retry once if the connection is lost
+     * */
     private <T> T executeWithRetry(CommandAction<T> action) throws IOException {
         try {
             return action.execute();
