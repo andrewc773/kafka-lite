@@ -3,6 +3,7 @@ package com.distributed.systems.network;
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.util.Logger;
+import com.distributed.systems.util.Protocol;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -25,7 +26,7 @@ public class BrokerServer {
     public void start() {
 
         printBanner();
-        
+
         // Create ServerSocket to listen for incoming TCP connections
         try (ServerSocket serverSocket = new ServerSocket(port)) {
 
@@ -53,42 +54,45 @@ public class BrokerServer {
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
         ) {
-            out.println("--- Welcome to Kafka-Lite Broker ---");
-            out.println("Commands: PRODUCE <data> | CONSUME <offset> | QUIT");
+            out.println(Protocol.WELCOME_HEADER);
+            out.println(Protocol.WELCOME_HELP);
 
             String line;
 
             while ((line = in.readLine()) != null) {
                 line = line.trim();
 
-                if (line.equalsIgnoreCase("QUIT")) {
+                if (line.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     out.println("Goodbye!");
                     break;
                 }
 
-                if (line.startsWith("PRODUCE ")) {
-                    // extract everything after "PRODUCE "
-                    String payload = line.substring(8).trim();
+                if (line.startsWith(Protocol.CMD_PRODUCE + " ")) {
+                    String payload = line.substring(Protocol.CMD_PRODUCE.length()).trim();
+
                     if (payload.isEmpty()) {
-                        out.println("ERROR: No data provided to produce..");
+                        out.println(Protocol.RESP_ERROR_PREFIX + "No data provided.");
                         continue;
                     }
+
                     long offset = log.append(payload.getBytes());
+
                     Logger.logNetwork("PRODUCE request successful. Offset: " + offset);
-                    out.println("SUCCESS: Message stored at OFFSET " + offset);
-                } else if (line.startsWith("CONSUME ")) {
+                    out.println(Protocol.formatSuccess(offset));
+                } else if (line.startsWith(Protocol.CMD_CONSUME + " ")) {
                     try {
                         // Parse the offset from the command
-                        long offset = Long.parseLong(line.substring(8).trim());
+                        long offset = Long.parseLong(line.substring(Protocol.CMD_CONSUME.length()).trim());
                         byte[] data = log.read(offset);
 
                         Logger.logNetwork("CONSUME request for offset: " + offset);
-                        out.println("DATA: " + new String(data));
+                        out.println(Protocol.RESP_DATA_PREFIX + new String(data));
                     } catch (NumberFormatException e) {
                         out.println("ERROR: Invalid offset format. Use CONSUME <number>.");
                     } catch (IOException e) {
-                        Logger.logError("Failed consume at offset " + line.substring(8) + ": " + e.getMessage());
-                        out.println("ERROR: " + e.getMessage()); // Will catch your "Not Found" exception
+                        String offsetStr = line.substring(Protocol.CMD_CONSUME.length()).trim();
+                        Logger.logError("Failed consume at offset " + offsetStr + ": " + e.getMessage());
+                        out.println(Protocol.RESP_ERROR_PREFIX + e.getMessage());
                     }
 
                 } else {
