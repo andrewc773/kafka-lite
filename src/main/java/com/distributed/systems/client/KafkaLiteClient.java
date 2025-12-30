@@ -1,5 +1,6 @@
 package com.distributed.systems.client;
 
+import com.distributed.systems.util.Logger;
 import com.distributed.systems.util.Protocol;
 
 import java.io.*;
@@ -20,6 +21,8 @@ public class KafkaLiteClient implements AutoCloseable {
     }
 
     private void connect() throws IOException {
+        Logger.logNetwork("Connecting to broker at " + host + ":" + port + "...");
+
         this.socket = new Socket(host, port);
         this.out = new PrintWriter(socket.getOutputStream(), true);
         this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -63,6 +66,30 @@ public class KafkaLiteClient implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        if (socket != null) socket.close();
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
     }
+
+    @FunctionalInterface
+    private interface CommandAction<T> {
+        T execute() throws IOException;
+    }
+
+    private <T> T executeWithRetry(CommandAction<T> action) throws IOException {
+        try {
+            return action.execute();
+        } catch (IOException e) {
+            Logger.logError("Socket error detected: " + e.getMessage());
+            Logger.logInfo("Attempting automatic reconnection...");
+
+            close();   // Cleanup old resources
+            connect(); // Re-establish the pipe
+
+            Logger.logNetwork("Reconnected successfully. Retrying command...");
+            return action.execute(); // Second attempt
+        }
+    }
+
+
 }
