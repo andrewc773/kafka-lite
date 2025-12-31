@@ -1,5 +1,6 @@
 package com.distributed.systems.network;
 
+import com.distributed.systems.client.KafkaLiteClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,12 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -71,6 +77,43 @@ public class BrokerServerTest {
             out.println("GARBAGE_COMMAND");
             String response = in.readLine();
             assertTrue(response.contains("ERROR"), "Server should respond with error for unknown commands");
+        }
+    }
+
+    @Test
+    void testBrokerUnderHighContention() throws Exception {
+        int port = 9093;
+        BrokerServer server = new BrokerServer(port, Files.createTempDirectory("stress-test").toString());
+
+        // Start server in its own thread
+        Thread serverThread = new Thread(server::start);
+        serverThread.start();
+        Thread.sleep(500); // Give it a moment to bind to the port
+
+        int messageCount = 500;
+        ExecutorService clients = Executors.newFixedThreadPool(20); // 20 simultaneous "producers"
+        CountDownLatch latch = new CountDownLatch(messageCount);
+
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+            for (int i = 0; i < messageCount; i++) {
+                clients.submit(() -> {
+                    try {
+                        client.produce("Contention Test Message");
+                        latch.countDown();
+                    } catch (IOException e) {
+                        System.err.println("Client failed: " + e.getMessage());
+                    }
+                });
+            }
+
+            boolean finished = latch.await(10, TimeUnit.SECONDS);
+            assertTrue(finished, "Broker failed to process 500 messages within the timeout");
+
+            // Verify stats reflect reality
+            String stats = client.getStats();
+            assertTrue(stats.contains("MSG_COUNT=500"), "Stats should show exactly 500 messages");
+        } finally {
+            clients.shutdown();
         }
     }
 }
