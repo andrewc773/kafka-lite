@@ -15,6 +15,10 @@ public class Protocol {
     public static final String WELCOME_HEADER = "--- Welcome to Kafka-Lite Broker ---";
     public static final String WELCOME_HELP = "Commands: PRODUCE <data> | CONSUME <offset> | QUIT";
 
+    // Statistics
+    public static final String CMD_STATS = "STATS";
+    public static final String RESP_STATS_PREFIX = "STATS_REPORT: ";
+
     // Helper for server-side formatting
     public static String formatSuccess(long offset) {
         return RESP_SUCCESS_PREFIX + offset;

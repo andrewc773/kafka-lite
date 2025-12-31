@@ -207,4 +207,26 @@ public class Log {
     public long getSegmentCount() {
         return segments.size();
     }
+
+    /**
+     * Calculates the total size of all log segments and indexes in bytes.
+     */
+    public long getTotalDiskUsage() {
+        try (var stream = Files.walk(this.dataDir)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException e) {
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException e) {
+            Logger.logError("Failed to calculate disk usage: " + e.getMessage());
+            return -1L;
+        }
+    }
+
 }
