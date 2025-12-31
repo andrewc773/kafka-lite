@@ -13,8 +13,12 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class BrokerServer {
+    private final ExecutorService threadPool;
+    private static final int MAX_THREADS = 10; // Only 10 clients at a time
 
     private final Log log;
     private final int port;
@@ -25,6 +29,7 @@ public class BrokerServer {
     public BrokerServer(int port, String dataDir) throws IOException {
         this.port = port;
         this.log = new Log(Paths.get(dataDir), new BrokerConfig());
+        this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
     }
 
     public void start() {
@@ -42,14 +47,14 @@ public class BrokerServer {
                 Socket clientSocket = serverSocket.accept();
                 Logger.logNetwork("New client connected: " + clientSocket.getRemoteSocketAddress());
 
-                Thread clientThread = new Thread(() -> {
-                    handleClient(clientSocket);
-                });
-
-                clientThread.start();
+                threadPool.submit(() -> handleClient(clientSocket));
             }
         } catch (IOException e) {
             Logger.logError("Server failed to start: " + e.getMessage());
+        } finally {
+            // This stops the pool from accepting new tasks and gracefully
+            // finishes existing ones when the server stops.
+            threadPool.shutdown();
         }
     }
 
