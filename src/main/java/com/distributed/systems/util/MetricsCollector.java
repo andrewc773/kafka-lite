@@ -19,9 +19,7 @@ public class MetricsCollector {
         long durationNano = System.nanoTime() - startNano;
         totalMessages.increment();
 
-        // Convert to ms for the report, but use double for precision if needed
-        long latencyMs = durationNano / 1_000_000;
-        lastLatencyNano.set(latencyMs);
+        lastLatencyNano.set(durationNano);
     }
 
     public String getStatsReport(long diskUsageBytes) {

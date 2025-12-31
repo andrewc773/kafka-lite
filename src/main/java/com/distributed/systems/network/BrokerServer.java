@@ -3,6 +3,7 @@ package com.distributed.systems.network;
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.util.Logger;
+import com.distributed.systems.util.MetricsCollector;
 import com.distributed.systems.util.Protocol;
 
 import java.io.BufferedReader;
@@ -17,6 +18,9 @@ public class BrokerServer {
 
     private final Log log;
     private final int port;
+
+    private final MetricsCollector metrics = new MetricsCollector();
+
 
     public BrokerServer(int port, String dataDir) throws IOException {
         this.port = port;
@@ -68,6 +72,8 @@ public class BrokerServer {
                 }
 
                 if (line.startsWith(Protocol.CMD_PRODUCE + " ")) {
+                    long startNano = System.nanoTime();
+
                     String payload = line.substring(Protocol.CMD_PRODUCE.length()).trim();
 
                     if (payload.isEmpty()) {
@@ -76,7 +82,7 @@ public class BrokerServer {
                     }
 
                     long offset = log.append(payload.getBytes());
-
+                    metrics.recordMessage(startNano);
                     Logger.logNetwork("PRODUCE request successful. Offset: " + offset);
                     out.println(Protocol.formatSuccess(offset));
                 } else if (line.startsWith(Protocol.CMD_CONSUME + " ")) {
@@ -95,6 +101,13 @@ public class BrokerServer {
                         out.println(Protocol.RESP_ERROR_PREFIX + e.getMessage());
                     }
 
+                } else if (line.equalsIgnoreCase(Protocol.CMD_STATS)) {
+                    long diskUsage = log.getTotalDiskUsage();
+
+                    String report = metrics.getStatsReport(diskUsage);
+
+                    // Send back to client
+                    out.println(Protocol.RESP_STATS_PREFIX + report);
                 } else {
                     out.println("ERROR: Unknown Command. Try PRODUCE <data> or CONSUME <offset>");
                 }

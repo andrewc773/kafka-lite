@@ -38,7 +38,7 @@ public class KafkaLiteClient implements AutoCloseable {
      * @return The offset assigned to the message.
      */
     public long produce(String data) throws IOException {
-        
+
         return executeWithRetry(() -> {
             //sending to server
             out.println(Protocol.CMD_PRODUCE + " " + data);
@@ -67,6 +67,22 @@ public class KafkaLiteClient implements AutoCloseable {
                 return response.substring(Protocol.RESP_DATA_PREFIX.length());
             } else {
                 throw new IOException("Server error: " + response);
+            }
+        });
+    }
+
+    /**
+     * Retrieves a health and performance report from the broker.
+     */
+    public String getStats() throws IOException {
+        return executeWithRetry(() -> {
+            out.println(Protocol.CMD_STATS);
+            String response = in.readLine();
+
+            if (response != null && response.startsWith(Protocol.RESP_STATS_PREFIX)) {
+                return response.substring(Protocol.RESP_STATS_PREFIX.length());
+            } else {
+                throw new IOException("Failed to retrieve stats: " + response);
             }
         });
     }

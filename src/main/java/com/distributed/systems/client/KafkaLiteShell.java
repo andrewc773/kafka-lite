@@ -33,6 +33,10 @@ public class KafkaLiteShell {
                         String data = client.consume(offset);
                         System.out.println("Data: " + data);
 
+                    } else if (input.equalsIgnoreCase("stats")) {
+                        String report = client.getStats();
+                        System.out.println("\u001B[33m[BROKER STATS]\u001B[0m " + report);
+                        
                     } else {
                         System.out.println("Unknown command. Use: produce <msg> or consume <offset>");
                     }
