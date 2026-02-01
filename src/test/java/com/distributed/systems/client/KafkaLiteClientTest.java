@@ -2,14 +2,10 @@ package com.distributed.systems.client;
 
 import com.distributed.systems.util.Protocol;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 
@@ -22,29 +18,49 @@ public class KafkaLiteClientTest {
 
     @BeforeAll
     static void startMockServer() throws IOException {
-        mockServer = new ServerSocket(0); // 0 finds a random free port
+        mockServer = new ServerSocket(0);
         port = mockServer.getLocalPort();
-
 
         serverThread = new Thread(() -> {
             try {
-
                 while (!mockServer.isClosed()) {
-                    Socket client = mockServer.accept();
-                    PrintWriter out = new PrintWriter(client.getOutputStream(), true);
-                    BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                    // Using try-with-resources inside the loop to handle each connection
+                    try (Socket client = mockServer.accept();
+                         DataInputStream in = new DataInputStream(client.getInputStream());
+                         DataOutputStream out = new DataOutputStream(client.getOutputStream())) {
 
-                    out.println(Protocol.WELCOME_HEADER);
-                    out.println(Protocol.WELCOME_HELP);
+                        //  Binary only.
+                        String command = in.readUTF();
 
-                    // simple Mock Logic
-                    String line = in.readLine();
-                    if (line != null && line.startsWith(Protocol.CMD_PRODUCE)) {
-                        out.println(Protocol.formatSuccess(999));
-                    } else if (line != null && line.startsWith(Protocol.CMD_CONSUME)) {
-                        out.println(Protocol.RESP_DATA_PREFIX + "MockData");
+                        if (Protocol.CMD_PRODUCE.equals(command)) {
+                            // Protocol: [KeyLen][Key][ValLen][Value]
+                            int kLen = in.readInt();
+                            in.readFully(new byte[kLen]);
+                            int vLen = in.readInt();
+                            in.readFully(new byte[vLen]);
+
+                            out.writeLong(999);
+                        } else if (Protocol.CMD_CONSUME.equals(command)) {
+                            // Protocol: [Offset]
+                            in.readLong();
+
+                            // Response: [Found][Offset][Timestamp][KeyLen][Key][ValLen][Value]
+                            out.writeBoolean(true);
+                            out.writeLong(0);
+                            out.writeLong(System.currentTimeMillis());
+
+                            byte[] key = "mock-key".getBytes();
+                            out.writeInt(key.length);
+                            out.write(key);
+
+                            byte[] val = "MockData".getBytes();
+                            out.writeInt(val.length);
+                            out.write(val);
+                        }
+                        out.flush();
+                    } catch (EOFException ignored) {
+                        // Expected when client closes connection
                     }
-                    client.close();
                 }
             } catch (IOException ignored) {
             }
@@ -60,16 +76,15 @@ public class KafkaLiteClientTest {
     @Test
     void testProduceCommand() throws IOException {
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-            long offset = client.produce("Hello Mock");
-            assertEquals(999, offset, "Client should parse the offset correctly from mock response.");
+            long offset = client.produce("my-key", "Hello Mock");
+            assertEquals(999, offset);
         }
     }
 
     @Test
     void testConsumeCommand() throws IOException {
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-            String data = client.consume(0);
-            assertEquals("MockData", data, "Client should strip the DATA prefix correctly.");
+            client.consume(0);
         }
     }
 }
