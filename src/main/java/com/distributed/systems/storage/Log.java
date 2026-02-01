@@ -128,6 +128,8 @@ public class Log {
 
         Map.Entry<Long, LogSegment> entry = segments.floorEntry(offset);
 
+        Logger.logDebug("last offset" + entry.getValue().getLastOffset());
+
         if (entry == null) {
             throw new IOException("Offset " + offset + " is before the start of the log.");
         }

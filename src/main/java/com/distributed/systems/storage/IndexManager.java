@@ -41,16 +41,18 @@ public class IndexManager {
         Logger.logStorage("Index entry added: Offset " + offset + " -> Position " + position);
     }
 
-    // Returns {logicalOffset, physicalPosition}
-    public IndexEntry lookup(long targetOffset) throws IOException {
+    // Update the method signature to accept the baseOffset of the segment
+    public IndexEntry lookup(long targetOffset, long baseOffset) throws IOException {
         long fileSize = indexChannel.size();
-        if (fileSize == 0) return new IndexEntry(0, 0);
+
+        // FIX 1: If index is empty, the closest we know is the start of the segment
+        if (fileSize == 0) return new IndexEntry(baseOffset, 0);
 
         long low = 0;
         long high = (fileSize / 16) - 1;
 
-        // default starting point (the first bookmark)
-        long bestOffset = 0;
+        // FIX 2: Default to the baseOffset, not 0
+        long bestOffset = baseOffset;
         long bestPosition = 0;
 
         ByteBuffer buffer = ByteBuffer.allocate(16);
@@ -65,7 +67,6 @@ public class IndexManager {
             long positionAtMid = buffer.getLong();
 
             if (offsetAtMid == targetOffset) {
-                Logger.logStorage("Index hit: Target " + targetOffset + " found at pos " + positionAtMid);
                 return new IndexEntry(offsetAtMid, positionAtMid);
             } else if (offsetAtMid < targetOffset) {
                 bestOffset = offsetAtMid;
@@ -76,7 +77,6 @@ public class IndexManager {
             }
         }
 
-        Logger.logStorage("Index search: Target " + targetOffset + " -> Nearest offset: " + bestOffset);
         return new IndexEntry(bestOffset, bestPosition);
     }
 
