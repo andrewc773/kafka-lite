@@ -90,7 +90,6 @@ public class LogTest {
             byte[] data = ("Message-number-" + i).getBytes();
             log.append(key, data);
 
-            // New Format Overhead: 8(TS) + 4(KeyLen) + Key + 4(ValLen) + Value
             expectedTotalBytes += (8 + 4 + key.length + 4 + data.length);
         }
 
@@ -142,7 +141,6 @@ public class LogTest {
                     }).sum();
         }
 
-        // Calculation: 8 (TS) + 4 (KeyLen) + 10 (Key) + 4 (ValLen) + 11 (Val) = 37 bytes per message
         long bytesPerMessage = 8 + 4 + key.length + 4 + payload.length;
         long expectedSize = bytesPerMessage * (threadCount * msgsPerThread);
 

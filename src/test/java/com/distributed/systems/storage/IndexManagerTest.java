@@ -36,7 +36,6 @@ public class IndexManagerTest {
         Path indexPath = tempDir.resolve("test.index");
         IndexManager index = new IndexManager(indexPath);
 
-        // We'll use a baseOffset of 0 for this specific test
         long baseOffset = 0;
 
         index.addEntry(0, 0);       // Msg 0 is at Byte 0
