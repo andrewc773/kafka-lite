@@ -31,40 +31,35 @@ public class KafkaLiteClient implements AutoCloseable {
     }
 
     /**
-     * Sends a message to the broker.
-     *
-     * @return The offset assigned to the message.
+     * Sends a message to the broker with a key.
+     * Protocol: [String CMD][Int KeyLen][Bytes Key][Int ValLen][Bytes Val]
      */
-    public long produce(String topic, String key, String value) throws IOException {
+    public long produce(String key, String value) throws IOException {
         return executeWithRetry(() -> {
-            out.writeUTF(Protocol.CMD_PRODUCE);
-            out.writeUTF(topic);
+            out.writeUTF(Protocol.CMD_PRODUCE); // "PRODUCE"
 
+            // Key
             byte[] keyBytes = (key == null) ? new byte[0] : key.getBytes();
             out.writeInt(keyBytes.length);
             out.write(keyBytes);
 
+            // Value
             byte[] valBytes = value.getBytes();
             out.writeInt(valBytes.length);
             out.write(valBytes);
             out.flush();
 
-            // Server returns the assigned offset as a long
             return in.readLong();
         });
     }
 
     /**
      * Retrieves a message from the broker by offset.
+     * Protocol: [String CMD][Long Offset]
      */
-    /**
-     * Retrieves a message from the broker by topic and offset.
-     * Protocol: [String CMD][String Topic][Long Offset]
-     */
-    public void consume(String topic, long offset) throws IOException {
+    public void consume(long offset) throws IOException {
         executeWithRetry(() -> {
-            out.writeUTF(Protocol.CMD_CONSUME);
-            out.writeUTF(topic);
+            out.writeUTF(Protocol.CMD_CONSUME); // "CONSUME"
             out.writeLong(offset);
             out.flush();
 
@@ -81,8 +76,8 @@ public class KafkaLiteClient implements AutoCloseable {
                 byte[] val = new byte[valLen];
                 in.readFully(val);
 
-                System.out.printf("[%s#%d] %d | Key: %s | Val: %s%n",
-                        topic, resOffset, timestamp, new String(key), new String(val));
+                System.out.printf("[Offset: %d] [TS: %d] | Key: %s | Val: %s%n",
+                        resOffset, timestamp, new String(key), new String(val));
             } else {
                 String error = in.readUTF();
                 throw new IOException("Server error: " + error);
