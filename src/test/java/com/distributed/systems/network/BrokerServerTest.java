@@ -1,15 +1,13 @@
 package com.distributed.systems.network;
 
 import com.distributed.systems.client.KafkaLiteClient;
+import com.distributed.systems.util.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,39 +41,68 @@ public class BrokerServerTest {
         }
     }
 
+    @AfterEach
+    void tearDown() {
+        if (server != null) {
+            server.stop();
+        }
+    }
+
     @Test
     public void testProduceAndConsumeOverNetwork() throws IOException {
         try (Socket socket = new Socket("localhost", testPort);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+             DataInputStream in = new DataInputStream(socket.getInputStream())) {
 
-            // Read welcome messages
-            in.readLine(); // Welcome banner
-            in.readLine(); // Commands info
+            out.writeUTF("PRODUCE");
 
-            // Test PRODUCE
-            out.println("PRODUCE Network-Message");
-            String response = in.readLine();
-            assertTrue(response.contains("OFFSET 0"), "Should return offset 0 for first message");
+            byte[] key = "net-key".getBytes();
+            out.writeInt(key.length);
+            out.write(key);
 
-            // Test CONSUME
-            out.println("CONSUME 0");
-            String dataResponse = in.readLine();
-            assertEquals("DATA: Network-Message", dataResponse, "Should retrieve the correct data");
+            byte[] value = "Network-Message".getBytes();
+            out.writeInt(value.length);
+            out.write(value);
+            out.flush(); // Ensure the command is sent!
+
+            long offset = in.readLong();
+            assertEquals(0, offset, "Should return offset 0 for first message");
+
+            out.writeUTF("CONSUME");
+            out.writeLong(0);
+            out.flush();
+
+            boolean found = in.readBoolean();
+            assertTrue(found, "Message should be found at offset 0");
+
+            long resOffset = in.readLong();
+            long timestamp = in.readLong();
+
+            int resKeyLen = in.readInt();
+            byte[] resKey = new byte[resKeyLen];
+            in.readFully(resKey);
+
+            int resValLen = in.readInt();
+            byte[] resValue = new byte[resValLen];
+            in.readFully(resValue);
+
+            assertEquals("Network-Message", new String(resValue), "Should retrieve the correct data");
         }
     }
 
     @Test
     public void testInvalidCommands() throws IOException {
         try (Socket socket = new Socket("localhost", testPort);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+             DataInputStream in = new DataInputStream(socket.getInputStream())) {
 
-            in.readLine();
-            in.readLine(); // Skip welcome
+            out.writeUTF("GARBAGE_COMMAND");
+            out.flush();
 
-            out.println("GARBAGE_COMMAND");
-            String response = in.readLine();
+            // 2. Read the response using binary readUTF
+            // This matches the server's: out.writeUTF("ERROR: Unknown Command");
+            String response = in.readUTF();
+
             assertTrue(response.contains("ERROR"), "Server should respond with error for unknown commands");
         }
     }
@@ -88,30 +115,33 @@ public class BrokerServerTest {
         // Start server in its own thread
         Thread serverThread = new Thread(server::start);
         serverThread.start();
-        Thread.sleep(500); // Give it a moment to bind to the port
+        Thread.sleep(500);
 
         int messageCount = 500;
-        ExecutorService clients = Executors.newFixedThreadPool(20); // 20 simultaneous "producers"
+        int threadCount = 20;
+        ExecutorService clients = Executors.newFixedThreadPool(threadCount);
         CountDownLatch latch = new CountDownLatch(messageCount);
 
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-            for (int i = 0; i < messageCount; i++) {
-                clients.submit(() -> {
-                    try {
-                        client.produce("Contention Test Message");
-                        latch.countDown();
-                    } catch (IOException e) {
-                        System.err.println("Client failed: " + e.getMessage());
-                    }
-                });
-            }
+        for (int i = 0; i < messageCount; i++) {
+            clients.submit(() -> {
+                // Every task gets its own connection/client
+                try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+                    client.produce("my-key", "Contention Test Message");
+                    latch.countDown();
+                } catch (IOException e) {
+                    System.err.println("Client failed: " + e.getMessage());
+                }
+            });
+        }
 
-            boolean finished = latch.await(10, TimeUnit.SECONDS);
-            assertTrue(finished, "Broker failed to process 500 messages within the timeout");
+        boolean finished = latch.await(15, TimeUnit.SECONDS);
+        assertTrue(finished, "Broker failed to process messages within the timeout");
 
-            // Verify stats reflect reality
-            String stats = client.getStats();
-            assertTrue(stats.contains("MSG_COUNT=500"), "Stats should show exactly 500 messages");
+        // Check final stats with a fresh connection
+        try (KafkaLiteClient finalClient = new KafkaLiteClient("localhost", port)) {
+            String stats = finalClient.getStats();
+            Logger.logDebug(stats);
+            assertTrue(stats.contains("MSG_COUNT=500"), "Stats should show 500 messages");
         } finally {
             clients.shutdown();
         }

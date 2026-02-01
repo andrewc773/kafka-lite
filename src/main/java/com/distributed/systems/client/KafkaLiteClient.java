@@ -11,8 +11,9 @@ public class KafkaLiteClient implements AutoCloseable {
     private final String host;
     private final int port;
     private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
+
+    private DataOutputStream out;
+    private DataInputStream in;
 
     public KafkaLiteClient(String host, int port) throws IOException {
         this.host = host;
@@ -24,50 +25,64 @@ public class KafkaLiteClient implements AutoCloseable {
         Logger.logNetwork("Connecting to broker at " + host + ":" + port + "...");
 
         this.socket = new Socket(host, port);
-        this.out = new PrintWriter(socket.getOutputStream(), true);
-        this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        // Skip the "Welcome" messages sent by the server on connect
-        in.readLine(); // --- Welcome ---
-        in.readLine(); // Commands: ...
+        // Using Data streams for binary record support
+        this.out = new DataOutputStream(socket.getOutputStream());
+        this.in = new DataInputStream(socket.getInputStream());
     }
 
     /**
-     * Sends a message to the broker.
-     *
-     * @return The offset assigned to the message.
+     * Sends a message to the broker with a key.
+     * Protocol: [String CMD][Int KeyLen][Bytes Key][Int ValLen][Bytes Val]
      */
-    public long produce(String data) throws IOException {
-
+    public long produce(String key, String value) throws IOException {
         return executeWithRetry(() -> {
-            //sending to server
-            out.println(Protocol.CMD_PRODUCE + " " + data);
-            String response = in.readLine();
+            out.writeUTF(Protocol.CMD_PRODUCE); // "PRODUCE"
 
-            if (response != null && response.startsWith(Protocol.RESP_SUCCESS_PREFIX)) {
-                return Long.parseLong(response.substring(Protocol.RESP_SUCCESS_PREFIX.length()).trim());
-            } else {
-                throw new IOException("Server error: " + response);
-            }
+            // Key
+            byte[] keyBytes = (key == null) ? new byte[0] : key.getBytes();
+            out.writeInt(keyBytes.length);
+            out.write(keyBytes);
+
+            // Value
+            byte[] valBytes = value.getBytes();
+            out.writeInt(valBytes.length);
+            out.write(valBytes);
+            out.flush();
+
+            return in.readLong();
         });
-
     }
 
     /**
      * Retrieves a message from the broker by offset.
+     * Protocol: [String CMD][Long Offset]
      */
-    public String consume(long offset) throws IOException {
+    public void consume(long offset) throws IOException {
+        executeWithRetry(() -> {
+            out.writeUTF(Protocol.CMD_CONSUME); // "CONSUME"
+            out.writeLong(offset);
+            out.flush();
 
-        return executeWithRetry(() -> {
-            //sending to server
-            out.println(Protocol.CMD_CONSUME + " " + offset);
-            String response = in.readLine();
+            boolean found = in.readBoolean();
+            if (found) {
+                long resOffset = in.readLong();
+                long timestamp = in.readLong();
 
-            if (response != null && response.startsWith(Protocol.RESP_DATA_PREFIX)) {
-                return response.substring(Protocol.RESP_DATA_PREFIX.length());
+                int keyLen = in.readInt();
+                byte[] key = new byte[keyLen];
+                in.readFully(key);
+
+                int valLen = in.readInt();
+                byte[] val = new byte[valLen];
+                in.readFully(val);
+
+                System.out.printf("[Offset: %d] [TS: %d] | Key: %s | Val: %s%n",
+                        resOffset, timestamp, new String(key), new String(val));
             } else {
-                throw new IOException("Server error: " + response);
+                String error = in.readUTF();
+                throw new IOException("Server error: " + error);
             }
+            return null; // For functional interface compatibility
         });
     }
 
@@ -76,20 +91,20 @@ public class KafkaLiteClient implements AutoCloseable {
      */
     public String getStats() throws IOException {
         return executeWithRetry(() -> {
-            out.println(Protocol.CMD_STATS);
-            String response = in.readLine();
-
-            if (response != null && response.startsWith(Protocol.RESP_STATS_PREFIX)) {
-                return response.substring(Protocol.RESP_STATS_PREFIX.length());
-            } else {
-                throw new IOException("Failed to retrieve stats: " + response);
-            }
+            out.writeUTF(Protocol.CMD_STATS);
+            out.flush();
+            return in.readUTF(); // Returns the report string
         });
     }
 
     @Override
     public void close() throws IOException {
         if (socket != null && !socket.isClosed()) {
+            try {
+                out.writeUTF(Protocol.CMD_QUIT);
+                out.flush();
+            } catch (IOException ignored) {
+            }
             socket.close();
         }
     }
@@ -105,14 +120,17 @@ public class KafkaLiteClient implements AutoCloseable {
         try {
             return action.execute();
         } catch (IOException e) {
-            Logger.logError("Socket error detected: " + e.getMessage());
-            Logger.logInfo("Attempting automatic reconnection...");
+            Logger.logError("Socket error: " + e.getMessage());
+            Logger.logInfo("Reconnecting...");
 
-            close();   // Cleanup old resources
-            connect(); // Re-establish the pipe
+            // Cleanup
+            try {
+                if (socket != null) socket.close();
+            } catch (Exception ignored) {
+            }
+            connect();
 
-            Logger.logNetwork("Reconnected successfully. Retrying command...");
-            return action.execute(); // Second attempt
+            return action.execute();
         }
     }
 

@@ -19,7 +19,7 @@ class KafkaLiteClientAutoReconnectTest {
 
     @BeforeEach
     void setup() throws IOException {
-        mockServer = new ServerSocket(0); // Random free port
+        mockServer = new ServerSocket(0);
         port = mockServer.getLocalPort();
         running = true;
         connectionCount.set(0);
@@ -36,29 +36,46 @@ class KafkaLiteClientAutoReconnectTest {
     @Test
     @DisplayName("Should reconnect and succeed if the first connection is severed")
     void testAutoReconnectSuccess() throws Exception {
-        // start a "fragile" mock server
         Thread serverThread = new Thread(() -> {
             try {
                 while (running) {
-                    try (Socket client = mockServer.accept()) {
-                        connectionCount.incrementAndGet();
-                        PrintWriter out = new PrintWriter(client.getOutputStream(), true);
-                        BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                    // Use standard socket accept
+                    Socket client = null;
+                    try {
+                        client = mockServer.accept();
+                    } catch (IOException e) {
+                        if (!running) break;
+                        throw e;
+                    }
 
-                        // Protocol Welcome
-                        out.println(Protocol.WELCOME_HEADER);
-                        out.println(Protocol.WELCOME_HELP);
+                    int currentConn = connectionCount.incrementAndGet();
 
-                        String line = in.readLine();
-                        if (connectionCount.get() == 1) {
-                            // SIMULATE FAILURE: Kill the connection on the first attempt
+                    try (DataInputStream in = new DataInputStream(client.getInputStream());
+                         DataOutputStream out = new DataOutputStream(client.getOutputStream())) {
+
+                        if (currentConn == 1) {
+                            // Hard close immediately on first attempt
                             client.close();
-                        } else {
-                            // SUCCESS: Handle normally on second connection
-                            if (line != null && line.startsWith(Protocol.CMD_PRODUCE)) {
-                                out.println(Protocol.formatSuccess(555));
-                            }
+                            continue;
                         }
+
+                        // SUCCESS PATH: Read binary command
+                        String command = in.readUTF();
+                        if (Protocol.CMD_PRODUCE.equals(command)) {
+                            // Drain the binary payload: KeyLen -> Key -> ValLen -> Val
+                            int kLen = in.readInt();
+                            in.readFully(new byte[kLen]);
+                            int vLen = in.readInt();
+                            in.readFully(new byte[vLen]);
+
+                            // Write binary response
+                            out.writeLong(555);
+                            out.flush();
+                        }
+                    } catch (EOFException ignored) {
+                        // Handle client disconnect
+                    } finally {
+                        if (client != null && !client.isClosed()) client.close();
                     }
                 }
             } catch (IOException ignored) {
@@ -66,10 +83,10 @@ class KafkaLiteClientAutoReconnectTest {
         });
         serverThread.start();
 
-        // execute client Logic
+        // Execute Client Logic
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-            // This call should trigger the catch block, reconnect, and then return 555
-            long offset = client.produce("Test Data");
+            // Updated call signature: Key="my-key", Value="Test Data"
+            long offset = client.produce("my-key", "Test Data");
 
             assertEquals(555, offset, "Client should have successfully retried and received offset 555");
             assertEquals(2, connectionCount.get(), "Should have connected exactly twice (initial + retry)");

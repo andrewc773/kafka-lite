@@ -98,16 +98,16 @@ public class Log {
     /*
      * Append data to the current active segment.
      * */
-    public synchronized long append(byte[] data) throws IOException {
+    public synchronized long append(byte[] key, byte[] value) throws IOException {
         // Calculate total size: Current size + 4 bytes (length prefix) + data length
-        long estimatedSizeAfterAppend = activeSegment.getFileSize() + 4 + data.length;
+        long estimatedSizeAfterAppend = activeSegment.getFileSize() + 8 + 4 + key.length + 4 + value.length;
 
         // Rotate if this append would push us over the limit
         if (estimatedSizeAfterAppend > config.getMaxSegmentSize()) {
             rotate();
         }
 
-        long offset = activeSegment.append(data);
+        long offset = activeSegment.append(key, value);
         nextOffset = offset + 1;
         return offset;
     }
@@ -122,11 +122,13 @@ public class Log {
     /*
      * Reads data based on a logical offset
      * */
-    public byte[] read(long offset) throws IOException {
+    public LogRecord read(long offset) throws IOException {
         // Find the segment that contains this offset
         // floorEntry finds the greatest key less than or equal to the given offset
 
         Map.Entry<Long, LogSegment> entry = segments.floorEntry(offset);
+
+        Logger.logDebug("last offset" + entry.getValue().getLastOffset());
 
         if (entry == null) {
             throw new IOException("Offset " + offset + " is before the start of the log.");

@@ -2,14 +2,12 @@ package com.distributed.systems.network;
 
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;
+import com.distributed.systems.storage.LogRecord;
 import com.distributed.systems.util.Logger;
 import com.distributed.systems.util.MetricsCollector;
 import com.distributed.systems.util.Protocol;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
@@ -18,10 +16,14 @@ import java.util.concurrent.Executors;
 
 public class BrokerServer {
     private final ExecutorService threadPool;
+    private ServerSocket serverSocket;
+
     private static final int MAX_THREADS = 10; // Only 10 clients at a time
 
     private final Log log;
     private final int port;
+
+    private volatile boolean running = true;
 
     private final MetricsCollector metrics = new MetricsCollector();
 
@@ -33,88 +35,109 @@ public class BrokerServer {
     }
 
     public void start() {
-
-        printBanner();
-
-        // Create ServerSocket to listen for incoming TCP connections
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-
-            Logger.logNetwork("Broker initialized and listening on port " + port);
-            Logger.logInfo("Data Directory: " + serverSocket.getLocalSocketAddress());
-
-            while (true) {
-                // Wait for client to connect
+        try (ServerSocket ss = new ServerSocket(port)) {
+            this.serverSocket = ss;
+            while (running) {
                 Socket clientSocket = serverSocket.accept();
-                Logger.logNetwork("New client connected: " + clientSocket.getRemoteSocketAddress());
-
                 threadPool.submit(() -> handleClient(clientSocket));
             }
         } catch (IOException e) {
-            Logger.logError("Server failed to start: " + e.getMessage());
+            if (running) Logger.logError("Server failed: " + e.getMessage());
         } finally {
-            // This stops the pool from accepting new tasks and gracefully
-            // finishes existing ones when the server stops.
-            threadPool.shutdown();
+            threadPool.shutdownNow(); // Kill active client handlers
         }
+    }
+
+    public void stop() {
+        running = false;
+        try {
+            if (serverSocket != null) serverSocket.close();
+        } catch (IOException ignored) {
+        }
+    }
+
+    private void handleProduce(DataInputStream in, DataOutputStream out) throws IOException {
+        long startNano = System.nanoTime();
+
+        // Protocol: [KeyLen] [Key] [ValLen] [Value]
+        int keyLen = in.readInt();
+        byte[] key = new byte[keyLen];
+        in.readFully(key);
+
+        int valLen = in.readInt();
+        byte[] value = new byte[valLen];
+        in.readFully(value);
+
+        // Store in Log
+        long offset = log.append(key, value);
+        metrics.recordMessage(startNano);
+
+        // Response: [Offset]
+        out.writeLong(offset);
+        out.flush();
+    }
+
+    private void handleConsume(DataInputStream in, DataOutputStream out) throws IOException {
+        // Protocol: [Offset]
+        long offset = in.readLong();
+
+        try {
+            LogRecord record = log.read(offset);
+
+            // Response: [Found=True] [Timestamp] [KeyLen] [Key] [ValLen] [Value]
+            out.writeBoolean(true); // Status OK
+            out.writeLong(record.offset());
+            out.writeLong(record.timestamp());
+
+            out.writeInt(record.key().length);
+            out.write(record.key());
+
+            out.writeInt(record.value().length);
+            out.write(record.value());
+
+            Logger.logNetwork("Served offset " + offset);
+
+        } catch (IOException e) {
+            // Response: [Found=False] [ErrorMessage]
+            out.writeBoolean(false);
+            out.writeUTF(e.getMessage());
+        }
+        out.flush();
+    }
+
+    private void handleStats(DataOutputStream out) throws IOException {
+        long diskUsage = log.getTotalDiskUsage();
+        String report = metrics.getStatsReport(diskUsage);
+        out.writeUTF(report);
+        out.flush();
     }
 
     private void handleClient(Socket socket) {
         try (
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                DataInputStream in = new DataInputStream(socket.getInputStream());
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream())
         ) {
-            out.println(Protocol.WELCOME_HEADER);
-            out.println(Protocol.WELCOME_HELP);
 
-            String line;
+            Logger.logNetwork("Client connected: " + socket.getRemoteSocketAddress());
 
-            while ((line = in.readLine()) != null) {
-                line = line.trim();
-
-                if (line.equalsIgnoreCase(Protocol.CMD_QUIT)) {
-                    out.println("Goodbye!");
-                    break;
+            while (true) {
+                String command;
+                try {
+                    command = in.readUTF();
+                } catch (EOFException e) {
+                    break; //disconnect gracefully
                 }
 
-                if (line.startsWith(Protocol.CMD_PRODUCE + " ")) {
-                    long startNano = System.nanoTime();
-
-                    String payload = line.substring(Protocol.CMD_PRODUCE.length()).trim();
-
-                    if (payload.isEmpty()) {
-                        out.println(Protocol.RESP_ERROR_PREFIX + "No data provided.");
-                        continue;
-                    }
-
-                    long offset = log.append(payload.getBytes());
-                    metrics.recordMessage(startNano);
-                    Logger.logNetwork("PRODUCE request successful. Offset: " + offset);
-                    out.println(Protocol.formatSuccess(offset));
-                } else if (line.startsWith(Protocol.CMD_CONSUME + " ")) {
-                    try {
-                        // Parse the offset from the command
-                        long offset = Long.parseLong(line.substring(Protocol.CMD_CONSUME.length()).trim());
-                        byte[] data = log.read(offset);
-
-                        Logger.logNetwork("CONSUME request for offset: " + offset);
-                        out.println(Protocol.RESP_DATA_PREFIX + new String(data));
-                    } catch (NumberFormatException e) {
-                        out.println("ERROR: Invalid offset format. Use CONSUME <number>.");
-                    } catch (IOException e) {
-                        String offsetStr = line.substring(Protocol.CMD_CONSUME.length()).trim();
-                        Logger.logError("Failed consume at offset " + offsetStr + ": " + e.getMessage());
-                        out.println(Protocol.RESP_ERROR_PREFIX + e.getMessage());
-                    }
-
-                } else if (line.equalsIgnoreCase(Protocol.CMD_STATS)) {
-                    long diskUsage = log.getTotalDiskUsage();
-
-                    String report = metrics.getStatsReport(diskUsage);
-
-                    // Send back to client
-                    out.println(Protocol.RESP_STATS_PREFIX + report);
+                if (command.equalsIgnoreCase("PRODUCE")) {
+                    handleProduce(in, out);
+                } else if (command.equalsIgnoreCase("CONSUME")) {
+                    handleConsume(in, out);
+                } else if (command.equalsIgnoreCase("STATS")) {
+                    handleStats(out);
+                } else if (command.equalsIgnoreCase("QUIT")) {
+                    break;
                 } else {
-                    out.println("ERROR: Unknown Command. Try PRODUCE <data> or CONSUME <offset>");
+                    out.writeUTF("ERROR: Unknown Command");
                 }
 
             }

@@ -9,6 +9,7 @@ public class Logger {
     private static final String PURPLE = "\u001B[35m"; // Bootstrap/Config
     private static final String CYAN = "\u001B[36m";   // Startup
     private static final String RED = "\u001B[31m";    // Error
+    private static final String ORANGE = "\u001B[38;5;208m";
 
     public static void logBootstrap(String message) {
         System.out.println(PURPLE + "[BOOTSTRAP] " + RESET + message);
@@ -32,5 +33,9 @@ public class Logger {
 
     public static void logInfo(String message) {
         System.out.println(CYAN + "[INFO] " + RESET + message);
+    }
+
+    public static void logDebug(String message) {
+        System.out.println(ORANGE + "[DEBUG] " + RESET + message);
     }
 }

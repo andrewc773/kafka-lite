@@ -51,6 +51,7 @@ public class LogSegment {
 
         // Ensure we append to the end if the file exists.
         this.currentPosition = channel.size();
+        this.channel.position(this.currentPosition);
     }
 
     private long recoverOffsetFromDataFile() throws IOException {
@@ -58,13 +59,33 @@ public class LogSegment {
         long tempPos = 0;
         long fileSize = channel.size();
 
-        while (tempPos < fileSize) {
-            ByteBuffer lenBuf = ByteBuffer.allocate(4);
-            if (channel.read(lenBuf, tempPos) < 4) break;
-            lenBuf.flip();
-            int len = lenBuf.getInt();
+        ByteBuffer headerBuf = ByteBuffer.allocate(12); // Timestamp (8) + KeyLen (4)
+        ByteBuffer valLenBuf = ByteBuffer.allocate(4);
 
-            tempPos += (4 + len);
+
+        while (tempPos + 12 <= fileSize) {
+            // Read Timestamp + KeyLen
+            headerBuf.clear();
+            int read = channel.read(headerBuf, tempPos);
+            if (read < 12) break; // Partial header at end of file, stop scan
+
+            headerBuf.flip();
+            headerBuf.getLong();
+            int keyLen = headerBuf.getInt();
+
+            long valLenPos = tempPos + 12 + keyLen;
+
+            // FIX: Ensure we can read the 4-byte valLen and the val itself
+            if (valLenPos + 4 > fileSize) break;
+
+            valLenBuf.clear();
+            if (channel.read(valLenBuf, valLenPos) < 4) break;
+            valLenBuf.flip();
+            int valLen = valLenBuf.getInt();
+
+            if (valLenPos + 4 + valLen > fileSize) break; // Partial message
+
+            tempPos = valLenPos + 4 + valLen;
             tempOffset++;
         }
         return tempOffset;
@@ -75,7 +96,16 @@ public class LogSegment {
      * Appends a message to the log using a 4-byte length prefix. This framing allows the reader to
      * know exactly how much to read.
      */
-    public long append(byte[] data) throws IOException {
+    public long append(byte[] key, byte[] value) throws IOException {
+
+        long timestamp = System.currentTimeMillis();
+
+        if (key == null) key = new byte[0];
+        if (value == null) value = new byte[0]; //should throw error
+
+        // Size = Timestamp(8) + KeyLen(4) + Key(N) + ValLen(4) + Val(M)
+        int totalSize = 8 + 4 + key.length + 4 + value.length;
+
 
         // Check if we need to add sparse index entry before writing
         if (bytesSinceLastIndexEntry >= indexIntervalBytes) {
@@ -83,10 +113,12 @@ public class LogSegment {
             bytesSinceLastIndexEntry = 0;
         }
 
-        // [Length (4 bytes)] + [Payload (N bytes)]
-        ByteBuffer buffer = ByteBuffer.allocate(4 + data.length);
-        buffer.putInt(data.length);
-        buffer.put(data);
+        ByteBuffer buffer = ByteBuffer.allocate(totalSize);
+        buffer.putLong(timestamp);
+        buffer.putInt(key.length);
+        buffer.put(key);
+        buffer.putInt(value.length);
+        buffer.put(value);
         buffer.flip();
 
         // Write to channel using current position in retry manner
@@ -95,8 +127,9 @@ public class LogSegment {
             totalBytesWritten += channel.write(buffer, currentPosition + totalBytesWritten);
         }
 
-        currentPosition += totalBytesWritten;
-        bytesSinceLastIndexEntry += totalBytesWritten;
+
+        this.currentPosition += totalBytesWritten;
+        this.bytesSinceLastIndexEntry += totalBytesWritten;
 
         // Durability; Flush to physical hardware.
         channel.force(true);
@@ -105,66 +138,76 @@ public class LogSegment {
         return currentOffset++;
     }
 
-    public byte[] readAt(long position) throws IOException {
-        // Read the 4-bye length prefix
-        ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
-        int bytesRead = channel.read(lengthBuffer, position);
-
-        if (bytesRead < 4) {
-            throw new IOException("Could not read message length at position: " + position);
+    public LogRecord read(long targetOffset) throws IOException {
+        // 1. Boundary Check: currentOffset is the NEXT offset to be written
+        // so targetOffset must be less than currentOffset.
+// currentOffset is the NEXT offset to be assigned.
+        // Therefore, the highest readable offset is (currentOffset - 1).
+        if (targetOffset >= currentOffset) {
+            throw new IOException("Offset " + targetOffset + " does not exist yet. Latest offset: " + (currentOffset - 1));
         }
 
-        // Flip the buffer so we can read the integer out of it
-        lengthBuffer.flip();
-        int length = lengthBuffer.getInt();
-
-        // 2. Read the actual content (the message payload)
-        ByteBuffer dataBuffer = ByteBuffer.allocate(length);
-        int dataBytesRead = channel.read(dataBuffer, position + 4); // position + 4 skips the label
-
-        if (dataBytesRead != length) {
-            throw new IOException("Incomplete message read. Expected " + length + " bytes.");
+        if (targetOffset < baseOffset) {
+            throw new IOException("Offset " + targetOffset + " is before this segment's base offset " + baseOffset);
         }
 
-        return dataBuffer.array();
+        // 2. Index Lookup
+        IndexEntry entry = indexManager.lookup(targetOffset, baseOffset);
+        long logicalOffset = entry.logicalOffset();
+        long physicalPos = entry.physicalPosition();
+
+        // 3. Scan forward from the indexed point
+        ByteBuffer headerBuf = ByteBuffer.allocate(12);
+        ByteBuffer valLenBuf = ByteBuffer.allocate(4);
+
+        while (logicalOffset < targetOffset) {
+            headerBuf.clear();
+            // Read header at current physical position
+            if (channel.read(headerBuf, physicalPos) < 12) {
+                throw new IOException("Unexpected EOF at pos " + physicalPos + " while scanning for offset " + targetOffset);
+            }
+
+            headerBuf.flip();
+            headerBuf.getLong(); // skip timestamp
+            int keyLen = headerBuf.getInt();
+
+            // Find value length
+            valLenBuf.clear();
+            if (channel.read(valLenBuf, physicalPos + 12 + keyLen) < 4) {
+                throw new IOException("Unexpected EOF at valLen pos " + (physicalPos + 12 + keyLen));
+            }
+            valLenBuf.flip();
+            int valLen = valLenBuf.getInt();
+
+            // Advance to next record
+            physicalPos += (12 + keyLen + 4 + valLen);
+            logicalOffset++;
+        }
+
+        // 4. We found the exact physical start of our target record
+        return readRecordAt(physicalPos, targetOffset);
     }
 
-    public byte[] read(long targetOffset) throws IOException {
-        Logger.logStorage("Reading offset " + targetOffset + " from segment " + baseOffset);
+    private LogRecord readRecordAt(long position, long offset) throws IOException {
+        ByteBuffer header = ByteBuffer.allocate(12);
+        if (channel.read(header, position) < 12) throw new IOException("Read failed at header");
+        header.flip();
 
-        // jump-point from the index
-        IndexEntry entry = indexManager.lookup(targetOffset);
-        long currentOffset = entry.logicalOffset();
-        long physicalPosition = entry.physicalPosition();
+        long timestamp = header.getLong();
+        int keyLen = header.getInt();
 
-        // Linear Scan: Walk from the bookmark to the target
-        while (currentOffset < targetOffset) {
-            ByteBuffer lenBuf = ByteBuffer.allocate(4);
-            int bytesRead = channel.read(lenBuf, physicalPosition);
+        ByteBuffer keyBuf = ByteBuffer.allocate(keyLen);
+        if (channel.read(keyBuf, position + 12) < keyLen) throw new IOException("Read failed at key");
 
-            // if we hit the end of the file unexpectedly; the log is corrupted/truncated
-            if (bytesRead < 4) {
-                Logger.logError("Unexpected EOF at pos " + physicalPosition + " while looking for offset " + targetOffset);
-                throw new IOException("Unexpected EOF: Could not read message length at position "
-                        + physicalPosition + ". Target offset " + targetOffset + " may not exist.");
-            }
+        ByteBuffer valLenBuf = ByteBuffer.allocate(4);
+        if (channel.read(valLenBuf, position + 12 + keyLen) < 4) throw new IOException("Read failed at valLen");
+        valLenBuf.flip();
+        int valLen = valLenBuf.getInt();
 
-            lenBuf.flip();
-            int msgLen = lenBuf.getInt();
+        ByteBuffer valBuf = ByteBuffer.allocate(valLen);
+        if (channel.read(valBuf, position + 12 + keyLen + 4) < valLen) throw new IOException("Read failed at value");
 
-            // Move to the next message
-            physicalPosition += (4 + msgLen);
-            currentOffset++;
-
-            // Check if we've passed the end of the file while walking
-            if (physicalPosition > channel.size()) {
-                Logger.logError("Log truncation detected for offset " + targetOffset);
-                throw new IOException("Log truncation detected: Offset " + targetOffset
-                        + " points beyond the current file end.");
-            }
-        }
-
-        return readAt(physicalPosition);
+        return new LogRecord(offset, timestamp, keyBuf.array(), valBuf.array());
     }
 
     public void close() throws IOException {
