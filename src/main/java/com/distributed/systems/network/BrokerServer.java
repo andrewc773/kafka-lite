@@ -16,10 +16,14 @@ import java.util.concurrent.Executors;
 
 public class BrokerServer {
     private final ExecutorService threadPool;
+    private ServerSocket serverSocket;
+
     private static final int MAX_THREADS = 10; // Only 10 clients at a time
 
     private final Log log;
     private final int port;
+
+    private volatile boolean running = true;
 
     private final MetricsCollector metrics = new MetricsCollector();
 
@@ -31,18 +35,24 @@ public class BrokerServer {
     }
 
     public void start() {
-        printBanner();
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-            Logger.logNetwork("Broker listening on port " + port);
-
-            while (true) {
+        try (ServerSocket ss = new ServerSocket(port)) {
+            this.serverSocket = ss;
+            while (running) {
                 Socket clientSocket = serverSocket.accept();
                 threadPool.submit(() -> handleClient(clientSocket));
             }
         } catch (IOException e) {
-            Logger.logError("Server failed: " + e.getMessage());
+            if (running) Logger.logError("Server failed: " + e.getMessage());
         } finally {
-            threadPool.shutdown();
+            threadPool.shutdownNow(); // Kill active client handlers
+        }
+    }
+
+    public void stop() {
+        running = false;
+        try {
+            if (serverSocket != null) serverSocket.close();
+        } catch (IOException ignored) {
         }
     }
 
@@ -60,11 +70,11 @@ public class BrokerServer {
 
         // Store in Log
         long offset = log.append(key, value);
-
         metrics.recordMessage(startNano);
 
         // Response: [Offset]
         out.writeLong(offset);
+        out.flush();
     }
 
     private void handleConsume(DataInputStream in, DataOutputStream out) throws IOException {
@@ -92,12 +102,14 @@ public class BrokerServer {
             out.writeBoolean(false);
             out.writeUTF(e.getMessage());
         }
+        out.flush();
     }
 
     private void handleStats(DataOutputStream out) throws IOException {
         long diskUsage = log.getTotalDiskUsage();
         String report = metrics.getStatsReport(diskUsage);
         out.writeUTF(report);
+        out.flush();
     }
 
     private void handleClient(Socket socket) {
