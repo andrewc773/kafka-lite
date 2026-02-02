@@ -36,6 +36,10 @@ public class TopicManager {
         });
     }
 
+    public Log getLogIfExits(String topicName) {
+        return topicMap.get(topicName);
+    }
+
     /**
      * Returns total disk usage across all topics.
      */

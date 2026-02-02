@@ -3,6 +3,7 @@ package com.distributed.systems.network;
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.storage.LogRecord;
+import com.distributed.systems.storage.TopicManager;
 import com.distributed.systems.util.Logger;
 import com.distributed.systems.util.MetricsCollector;
 import com.distributed.systems.util.Protocol;
@@ -20,7 +21,7 @@ public class BrokerServer {
 
     private static final int MAX_THREADS = 10; // Only 10 clients at a time
 
-    private final Log log;
+    private final TopicManager topicManager;
     private final int port;
 
     private volatile boolean running = true;
@@ -30,7 +31,7 @@ public class BrokerServer {
 
     public BrokerServer(int port, String dataDir) throws IOException {
         this.port = port;
-        this.log = new Log(Paths.get(dataDir), new BrokerConfig());
+        this.topicManager = new TopicManager(Paths.get(dataDir), new BrokerConfig());
         this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
     }
 
@@ -59,6 +60,9 @@ public class BrokerServer {
     private void handleProduce(DataInputStream in, DataOutputStream out) throws IOException {
         long startNano = System.nanoTime();
 
+        String topic = in.readUTF(); //identify the log
+        Log log = topicManager.getOrCreateLog(topic);
+
         // Protocol: [KeyLen] [Key] [ValLen] [Value]
         int keyLen = in.readInt();
         byte[] key = new byte[keyLen];
@@ -78,8 +82,19 @@ public class BrokerServer {
     }
 
     private void handleConsume(DataInputStream in, DataOutputStream out) throws IOException {
-        // Protocol: [Offset]
+
+        String topic = in.readUTF();
         long offset = in.readLong();
+
+        Log log = topicManager.getLogIfExits(topic);
+
+        if (log == null) {
+            // Topic hasn't been created yet (no one has produced to it)
+            out.writeBoolean(false);
+            out.writeUTF("Topic [" + topic + "] does not exist.");
+            out.flush();
+            return;
+        }
 
         try {
             LogRecord record = log.read(offset);
@@ -106,8 +121,11 @@ public class BrokerServer {
     }
 
     private void handleStats(DataOutputStream out) throws IOException {
-        long diskUsage = log.getTotalDiskUsage();
-        String report = metrics.getStatsReport(diskUsage);
+        // Instead of one log, ask the manager for the sum of all logs
+        long totalDiskUsage = topicManager.getTotalDiskUsage();
+
+        String report = metrics.getStatsReport(totalDiskUsage);
+
         out.writeUTF(report);
         out.flush();
     }
