@@ -26,6 +26,7 @@ public class TopicManager {
     public Log getOrCreateLog(String topicName) {
         return topicMap.computeIfAbsent(topicName, name -> {
             try {
+                validateTopicName(topicName);
                 Path topicDir = dataRootDir.resolve(name);
                 Logger.logInfo("Initializing storage for topic: " + name);
                 return new Log(topicDir, config);
@@ -42,6 +43,15 @@ public class TopicManager {
         return topicMap.values().stream()
                 .mapToLong(Log::getTotalDiskUsage)
                 .sum();
+    }
+
+    /*
+     * Validate topic name
+     * */
+    private void validateTopicName(String name) {
+        if (name == null || !name.matches("^[a-zA-Z0-9_-]+$")) {
+            throw new IllegalArgumentException("Invalid topic name: " + name);
+        }
     }
 
 }
