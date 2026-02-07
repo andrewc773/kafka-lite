@@ -22,10 +22,16 @@ public class Main {
 
             System.out.printf("[BOOT] Port: %d%n", port);
             System.out.printf("[BOOT] Data Directory: %s%n", Paths.get(dataDir).toAbsolutePath());
-            
+
 
             System.out.println("\u001B[32m[READY] Broker is online and awaiting connections...\u001B[0m");
             System.out.println("-".repeat(40));
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("\n[SHUTDOWN] Shutdown signal received...");
+                server.stop();
+                System.out.println("[SHUTDOWN] Clean exit. Goodbye!");
+            }));
 
             //stays alive w/ while(true) block
             server.start();
