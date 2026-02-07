@@ -52,8 +52,13 @@ public class BrokerServer {
     public void stop() {
         running = false;
         try {
-            if (serverSocket != null) serverSocket.close();
-        } catch (IOException ignored) {
+            threadPool.shutdown(); // Stop accepting new tasks
+            topicManager.shutdown(); // Flush and close all files
+            if (serverSocket != null) {
+                serverSocket.close();
+            }
+        } catch (IOException e) {
+            Logger.logError("Error during server shutdown: " + e.getMessage());
         }
     }
 
