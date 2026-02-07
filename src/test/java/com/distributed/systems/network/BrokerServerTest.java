@@ -148,4 +148,58 @@ public class BrokerServerTest {
             clients.shutdown();
         }
     }
+
+    @Test
+    public void testGracefulShutdownPersistence(@TempDir Path tempDir) throws IOException {
+        int port = 9097;
+        String dataPath = tempDir.toString();
+
+        BrokerServer server = new BrokerServer(port, dataPath);
+        new Thread(server::start).start();
+
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+            client.produce("shutdown-test", "key", "important-data");
+        }
+
+        server.stop();
+
+        // Give a small buffer for OS file locks to release
+        try {
+            Thread.sleep(300);
+        } catch (InterruptedException ignored) {
+        }
+
+        Path topicDir = tempDir.resolve("shutdown-test");
+        assertTrue(Files.exists(topicDir), "Topic directory should exist");
+
+        // Check if index and data files were created and flushed
+        File[] files = topicDir.toFile().listFiles();
+        assertNotNull(files);
+        assertTrue(files.length >= 2, "Should have at least index and data files");
+    }
+
+    @Test
+    public void testServerRecoveryAfterGracefulShutdown(@TempDir Path tempDir) throws IOException {
+        int port = 9098;
+        String dataPath = tempDir.toString();
+
+        BrokerServer server1 = new BrokerServer(port, dataPath);
+        new Thread(server1::start).start();
+
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+            client.produce("recovery-topic", "k1", "v1");
+        }
+        server1.stop();
+
+        // rRestart a fresh server on the same path
+        BrokerServer server2 = new BrokerServer(port, dataPath);
+        new Thread(server2::start).start();
+
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+            // If recovery logic works, this topic should be 'discovered' on boot
+            // and we can consume from offset 0 immediately.
+            assertDoesNotThrow(() -> client.consume("recovery-topic", 0));
+        }
+        server2.stop();
+    }
 }
