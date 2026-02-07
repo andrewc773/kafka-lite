@@ -54,6 +54,19 @@ public class TopicManager {
         return topicMap.get(topicName);
     }
 
+    /*Shutdown used for graceful end once server comes to stop*/
+    public void shutdown() {
+        Logger.logInfo("Shutting down TopicManager and closing all logs...");
+        topicMap.forEach((name, log) -> {
+            try {
+                log.close();
+                Logger.logInfo("Closed topic: " + name);
+            } catch (IOException e) {
+                Logger.logError("Failed to close log for topic: " + name);
+            }
+        });
+    }
+
     /**
      * Returns total disk usage across all topics.
      */
