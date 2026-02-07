@@ -139,10 +139,6 @@ public class LogSegment {
     }
 
     public LogRecord read(long targetOffset) throws IOException {
-        // 1. Boundary Check: currentOffset is the NEXT offset to be written
-        // so targetOffset must be less than currentOffset.
-// currentOffset is the NEXT offset to be assigned.
-        // Therefore, the highest readable offset is (currentOffset - 1).
         if (targetOffset >= currentOffset) {
             throw new IOException("Offset " + targetOffset + " does not exist yet. Latest offset: " + (currentOffset - 1));
         }
@@ -151,12 +147,10 @@ public class LogSegment {
             throw new IOException("Offset " + targetOffset + " is before this segment's base offset " + baseOffset);
         }
 
-        // 2. Index Lookup
         IndexEntry entry = indexManager.lookup(targetOffset, baseOffset);
         long logicalOffset = entry.logicalOffset();
         long physicalPos = entry.physicalPosition();
 
-        // 3. Scan forward from the indexed point
         ByteBuffer headerBuf = ByteBuffer.allocate(12);
         ByteBuffer valLenBuf = ByteBuffer.allocate(4);
 
@@ -184,7 +178,6 @@ public class LogSegment {
             logicalOffset++;
         }
 
-        // 4. We found the exact physical start of our target record
         return readRecordAt(physicalPos, targetOffset);
     }
 

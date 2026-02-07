@@ -30,29 +30,31 @@ public class KafkaLiteShell {
                 if (input.isEmpty()) continue;
 
                 try {
-                    String[] parts = input.split("\\s+", 3);
+                    // Split into max 4 parts for 'produce topic key value'
+                    String[] parts = input.split("\\s+", 4);
                     String command = parts[0].toLowerCase();
 
                     switch (command) {
                         case "produce":
-                            if (parts.length < 3) {
-                                System.out.println("Usage: produce <key> <value>");
+                            if (parts.length < 4) {
+                                System.out.println("Usage: produce <topic> <key> <value>");
                                 continue;
                             }
-                            String key = parts[1];
-                            String value = parts[2];
-                            long offset = client.produce(key, value);
-                            System.out.println("\u001B[32m✔\u001B[0m Stored at offset: " + offset);
+                            String prodTopic = parts[1];
+                            String key = parts[2];
+                            String value = parts[3];
+                            long offset = client.produce(prodTopic, key, value);
+                            System.out.println("\u001B[32m✔\u001B[0m Stored in [" + prodTopic + "] at offset: " + offset);
                             break;
 
                         case "consume":
-                            if (parts.length < 2) {
-                                System.out.println("Usage: consume <offset>");
+                            if (parts.length < 3) {
+                                System.out.println("Usage: consume <topic> <offset>");
                                 continue;
                             }
-                            long consumeOffset = Long.parseLong(parts[1]);
-                            // Client.consume now handles its own printing to match the binary record
-                            client.consume(consumeOffset);
+                            String consTopic = parts[1];
+                            long consumeOffset = Long.parseLong(parts[2]);
+                            client.consume(consTopic, consumeOffset);
                             break;
 
                         case "stats":
@@ -61,7 +63,7 @@ public class KafkaLiteShell {
                             break;
 
                         default:
-                            System.out.println("Unknown command. Use: produce <key> <value>, consume <offset>, or stats");
+                            System.out.println("Unknown command. Use: produce, consume, or stats");
                     }
                 } catch (Exception e) {
                     System.err.println("Error: " + e.getMessage());

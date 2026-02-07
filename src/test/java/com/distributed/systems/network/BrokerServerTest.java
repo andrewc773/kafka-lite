@@ -55,6 +55,7 @@ public class BrokerServerTest {
              DataInputStream in = new DataInputStream(socket.getInputStream())) {
 
             out.writeUTF("PRODUCE");
+            out.writeUTF("test-topic");
 
             byte[] key = "net-key".getBytes();
             out.writeInt(key.length);
@@ -69,6 +70,7 @@ public class BrokerServerTest {
             assertEquals(0, offset, "Should return offset 0 for first message");
 
             out.writeUTF("CONSUME");
+            out.writeUTF("test-topic");
             out.writeLong(0);
             out.flush();
 
@@ -126,7 +128,7 @@ public class BrokerServerTest {
             clients.submit(() -> {
                 // Every task gets its own connection/client
                 try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-                    client.produce("my-key", "Contention Test Message");
+                    client.produce("my-topic", "my-key", "Contention Test Message");
                     latch.countDown();
                 } catch (IOException e) {
                     System.err.println("Client failed: " + e.getMessage());
