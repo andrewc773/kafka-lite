@@ -34,9 +34,12 @@ public class KafkaLiteClient implements AutoCloseable {
      * Sends a message to the broker with a key.
      * Protocol: [String CMD][Int KeyLen][Bytes Key][Int ValLen][Bytes Val]
      */
-    public long produce(String key, String value) throws IOException {
+    public long produce(String topic, String key, String value) throws IOException {
         return executeWithRetry(() -> {
             out.writeUTF(Protocol.CMD_PRODUCE); // "PRODUCE"
+
+            //Tell the server which topic we are writing to
+            out.writeUTF(topic);
 
             // Key
             byte[] keyBytes = (key == null) ? new byte[0] : key.getBytes();
@@ -57,9 +60,11 @@ public class KafkaLiteClient implements AutoCloseable {
      * Retrieves a message from the broker by offset.
      * Protocol: [String CMD][Long Offset]
      */
-    public void consume(long offset) throws IOException {
+    public void consume(String topic, long offset) throws IOException {
         executeWithRetry(() -> {
             out.writeUTF(Protocol.CMD_CONSUME); // "CONSUME"
+
+            out.writeUTF(topic);
             out.writeLong(offset);
             out.flush();
 

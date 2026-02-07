@@ -20,6 +20,20 @@ public class TopicManager {
 
         if (!Files.exists(dataRootDir)) {
             Files.createDirectories(dataRootDir);
+        } else {
+            try (var stream = Files.list(dataRootDir)) {
+                stream.filter(Files::isDirectory)
+                        .forEach(path -> {
+                            String topicName = path.getFileName().toString();
+                            try {
+                                // preload the log into our map
+                                topicMap.put(topicName, new Log(path, config));
+                                Logger.logInfo("Recovered topic: " + topicName);
+                            } catch (IOException e) {
+                                Logger.logError("Failed to recover topic " + topicName);
+                            }
+                        });
+            }
         }
     }
 

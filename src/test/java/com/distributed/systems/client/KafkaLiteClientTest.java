@@ -31,8 +31,10 @@ public class KafkaLiteClientTest {
 
                         //  Binary only.
                         String command = in.readUTF();
+                        String topic = in.readUTF();
 
                         if (Protocol.CMD_PRODUCE.equals(command)) {
+
                             // Protocol: [KeyLen][Key][ValLen][Value]
                             int kLen = in.readInt();
                             in.readFully(new byte[kLen]);
@@ -76,7 +78,7 @@ public class KafkaLiteClientTest {
     @Test
     void testProduceCommand() throws IOException {
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-            long offset = client.produce("my-key", "Hello Mock");
+            long offset = client.produce("my-topic", "my-key", "Hello Mock");
             assertEquals(999, offset);
         }
     }
@@ -84,7 +86,7 @@ public class KafkaLiteClientTest {
     @Test
     void testConsumeCommand() throws IOException {
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
-            client.consume(0);
+            client.consume("topic", 0);
         }
     }
 }
