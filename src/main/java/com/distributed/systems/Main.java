@@ -1,7 +1,6 @@
 package com.distributed.systems;
 
-import com.distributed.systems.network.BrokerServer;
-import com.distributed.systems.storage.LogSegment;
+import com.distributed.systems.server.BrokerServer;
 
 import java.nio.file.Paths;
 

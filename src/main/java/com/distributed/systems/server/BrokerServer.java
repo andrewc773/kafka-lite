@@ -1,4 +1,4 @@
-package com.distributed.systems.network;
+package com.distributed.systems.server;
 
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;

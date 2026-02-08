@@ -1,7 +1,7 @@
 package com.distributed.systems.storage;
 
 import com.distributed.systems.client.KafkaLiteClient;
-import com.distributed.systems.network.BrokerServer;
+import com.distributed.systems.server.BrokerServer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
