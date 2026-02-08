@@ -20,8 +20,10 @@ public class OffsetManager {
     public void commit(String groupId, String topic, long offset) throws IOException {
         String key = groupId + ":" + topic;
 
+        Log offsetLog = topicManager.getOrCreateLog(OFFSET_TOPIC);
+
         // write to the internal persistent OFFSET_TOPIC
-        topicManager.getLogIfExits(OFFSET_TOPIC).append(
+        offsetLog.append(
                 key.getBytes(),
                 String.valueOf(offset).getBytes()
         );
