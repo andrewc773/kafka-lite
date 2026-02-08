@@ -127,7 +127,7 @@ public class BrokerServerTest {
         for (int i = 0; i < messageCount; i++) {
             clients.submit(() -> {
                 // Every task gets its own connection/client
-                try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+                try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
                     client.produce("my-topic", "my-key", "Contention Test Message");
                     latch.countDown();
                 } catch (IOException e) {
@@ -140,7 +140,7 @@ public class BrokerServerTest {
         assertTrue(finished, "Broker failed to process messages within the timeout");
 
         // Check final stats with a fresh connection
-        try (KafkaLiteClient finalClient = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient finalClient = new KafkaLiteClient("localhost", port, "my-group-id")) {
             String stats = finalClient.getStats();
             Logger.logDebug(stats);
             assertTrue(stats.contains("MSG_COUNT=500"), "Stats should show 500 messages");
@@ -157,7 +157,7 @@ public class BrokerServerTest {
         BrokerServer server = new BrokerServer(port, dataPath);
         new Thread(server::start).start();
 
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             client.produce("shutdown-test", "key", "important-data");
         }
 
@@ -186,7 +186,7 @@ public class BrokerServerTest {
         BrokerServer server1 = new BrokerServer(port, dataPath);
         new Thread(server1::start).start();
 
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             client.produce("recovery-topic", "k1", "v1");
         }
         server1.stop();
@@ -195,7 +195,7 @@ public class BrokerServerTest {
         BrokerServer server2 = new BrokerServer(port, dataPath);
         new Thread(server2::start).start();
 
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             // If recovery logic works, this topic should be 'discovered' on boot
             // and we can consume from offset 0 immediately.
             assertDoesNotThrow(() -> client.consume("recovery-topic", 0));

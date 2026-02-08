@@ -62,7 +62,7 @@ class KafkaLiteClientAutoReconnectTest {
                         // SUCCESS PATH: Read binary command
                         String command = in.readUTF();
                         String topic = in.readUTF();
-                        
+
                         if (Protocol.CMD_PRODUCE.equals(command)) {
                             // Drain the binary payload: KeyLen -> Key -> ValLen -> Val
                             int kLen = in.readInt();
@@ -86,7 +86,7 @@ class KafkaLiteClientAutoReconnectTest {
         serverThread.start();
 
         // Execute Client Logic
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             // Updated call signature: Key="my-key", Value="Test Data"
             long offset = client.produce("my-topic", "my-key", "Test Data");
 

@@ -5,19 +5,28 @@ import com.distributed.systems.util.Protocol;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class KafkaLiteClient implements AutoCloseable {
 
     private final String host;
     private final int port;
     private Socket socket;
-
+    private final String groupId;
     private DataOutputStream out;
     private DataInputStream in;
+    private long currentOffset = 0;
 
-    public KafkaLiteClient(String host, int port) throws IOException {
+    // Background scheduler for auto-committing
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    public KafkaLiteClient(String host, int port, String groupId) throws IOException {
         this.host = host;
         this.port = port;
+        this.groupId = groupId;
         connect();
     }
 
@@ -37,16 +46,12 @@ public class KafkaLiteClient implements AutoCloseable {
     public long produce(String topic, String key, String value) throws IOException {
         return executeWithRetry(() -> {
             out.writeUTF(Protocol.CMD_PRODUCE); // "PRODUCE"
+            out.writeUTF(topic); //Tell the server which topic we are writing to
 
-            //Tell the server which topic we are writing to
-            out.writeUTF(topic);
-
-            // Key
             byte[] keyBytes = (key == null) ? new byte[0] : key.getBytes();
             out.writeInt(keyBytes.length);
             out.write(keyBytes);
 
-            // Value
             byte[] valBytes = value.getBytes();
             out.writeInt(valBytes.length);
             out.write(valBytes);
@@ -62,8 +67,7 @@ public class KafkaLiteClient implements AutoCloseable {
      */
     public void consume(String topic, long offset) throws IOException {
         executeWithRetry(() -> {
-            out.writeUTF(Protocol.CMD_CONSUME); // "CONSUME"
-
+            out.writeUTF(Protocol.CMD_CONSUME);
             out.writeUTF(topic);
             out.writeLong(offset);
             out.flush();
@@ -88,6 +92,30 @@ public class KafkaLiteClient implements AutoCloseable {
                 throw new IOException("Server error: " + error);
             }
             return null; // For functional interface compatibility
+        });
+    }
+
+    /**
+     * Helper to find where this client left off.
+     */
+    public long fetchOffset(String topic) throws IOException {
+        return executeWithRetry(() -> {
+            out.writeUTF(Protocol.CMD_OFFSET_FETCH);
+            out.writeUTF(this.groupId);
+            out.writeUTF(topic);
+            out.flush();
+            return in.readLong(); // Returns -1 if group is new
+        });
+    }
+
+    public void commitOffset(String topic, long offset) throws IOException {
+        executeWithRetry(() -> {
+            out.writeUTF(Protocol.CMD_OFFSET_COMMIT);
+            out.writeUTF(this.groupId);
+            out.writeUTF(topic);
+            out.writeLong(offset);
+            out.flush();
+            return in.readBoolean();
         });
     }
 
@@ -137,6 +165,24 @@ public class KafkaLiteClient implements AutoCloseable {
 
             return action.execute();
         }
+    }
+
+    /**
+     * Start the background offset-committer on the client side.
+     * Every X ms, it tells the broker: "I am still at offset Y".
+     */
+    public void startAutoCommit(String topic, AtomicLong offsetTracker, long intervalMs) {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                long toCommit = offsetTracker.get();
+                if (toCommit >= 0) {
+                    commitOffset(topic, toCommit);
+                    Logger.logInfo("Auto-committed offset " + toCommit + " for topic " + topic);
+                }
+            } catch (IOException e) {
+                Logger.logError("Auto-commit failed: " + e.getMessage());
+            }
+        }, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
     }
 
 
