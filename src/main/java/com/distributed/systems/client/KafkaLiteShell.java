@@ -15,7 +15,7 @@ public class KafkaLiteShell {
         System.out.println("  consume <offset>");
         System.out.println("  stats");
 
-        try (KafkaLiteClient client = new KafkaLiteClient(host, port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient(host, port, "my-group-id")) {
             Scanner scanner = new Scanner(System.in);
 
             while (true) {

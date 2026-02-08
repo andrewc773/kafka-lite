@@ -3,6 +3,7 @@ package com.distributed.systems.server;
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.storage.LogRecord;
+import com.distributed.systems.storage.OffsetManager;
 import com.distributed.systems.storage.TopicManager;
 import com.distributed.systems.util.Logger;
 import com.distributed.systems.util.MetricsCollector;
@@ -22,6 +23,7 @@ public class BrokerServer {
     private static final int MAX_THREADS = 10; // Only 10 clients at a time
 
     private final TopicManager topicManager;
+    private final OffsetManager offsetManager;
     private final int port;
 
     private volatile boolean running = true;
@@ -32,6 +34,7 @@ public class BrokerServer {
     public BrokerServer(int port, String dataDir) throws IOException {
         this.port = port;
         this.topicManager = new TopicManager(Paths.get(dataDir), new BrokerConfig());
+        this.offsetManager = new OffsetManager(this.topicManager);
         this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
     }
 
@@ -135,6 +138,23 @@ public class BrokerServer {
         out.flush();
     }
 
+    private void handleOffsetCommit(DataInputStream in, DataOutputStream out) throws IOException {
+        String groupIdCommit = in.readUTF();
+        String topicNameCommit = in.readUTF();
+        long offCommit = in.readLong();
+        offsetManager.commit(groupIdCommit, topicNameCommit, offCommit);
+        out.writeBoolean(true);
+        out.flush();
+    }
+
+    private void handleOffsetFetch(DataInputStream in, DataOutputStream out) throws IOException {
+        String groupIdFetch = in.readUTF();
+        String topicNameFetch = in.readUTF();
+        long currentOffset = offsetManager.fetch(groupIdFetch, topicNameFetch);
+        out.writeLong(currentOffset);
+        out.flush();
+    }
+
     private void handleClient(Socket socket) {
         try (
                 DataInputStream in = new DataInputStream(socket.getInputStream());
@@ -151,13 +171,17 @@ public class BrokerServer {
                     break; //disconnect gracefully
                 }
 
-                if (command.equalsIgnoreCase("PRODUCE")) {
+                if (command.equalsIgnoreCase(Protocol.CMD_PRODUCE)) {
                     handleProduce(in, out);
-                } else if (command.equalsIgnoreCase("CONSUME")) {
+                } else if (command.equalsIgnoreCase(Protocol.CMD_CONSUME)) {
                     handleConsume(in, out);
-                } else if (command.equalsIgnoreCase("STATS")) {
+                } else if (command.equalsIgnoreCase(Protocol.CMD_STATS)) {
                     handleStats(out);
-                } else if (command.equalsIgnoreCase("QUIT")) {
+                } else if (command.equalsIgnoreCase(Protocol.CMD_OFFSET_COMMIT)) {
+                    handleOffsetCommit(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_OFFSET_FETCH)) {
+                    handleOffsetFetch(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     break;
                 } else {
                     out.writeUTF("ERROR: Unknown Command");

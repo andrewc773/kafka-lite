@@ -36,7 +36,7 @@ public class TopicIntegrationTest {
 
     @Test
     public void testTopicIsolationAndIndependentOffsets() throws IOException {
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             // 1. Produce to Topic A
             long offsetA0 = client.produce("orders", "user_1", "pizza");
             long offsetA1 = client.produce("orders", "user_2", "burger");
@@ -59,7 +59,7 @@ public class TopicIntegrationTest {
 
     @Test
     public void testConsumeNonExistentTopic() throws IOException {
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             // We expect the client to throw an exception because 'found' will be false
             IOException exception = assertThrows(IOException.class, () -> {
                 client.consume("ghost-topic", 0);
@@ -78,7 +78,7 @@ public class TopicIntegrationTest {
         BrokerServer server1 = new BrokerServer(port, dataPath);
         new Thread(server1::start).start();
 
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             client.produce("persistence-test", "key1", "Permanent Data");
             client.produce("another-persistence-test", "key1", "Hello Again");
         }
@@ -95,7 +95,7 @@ public class TopicIntegrationTest {
         BrokerServer server2 = new BrokerServer(port, dataPath);
         new Thread(server2::start).start();
 
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             // This will only work if TopicManager discovered the folder
             // and Log discovered the .data files!
             assertDoesNotThrow(() -> client.consume("persistence-test", 0));

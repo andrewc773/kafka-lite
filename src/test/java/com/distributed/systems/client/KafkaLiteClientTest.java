@@ -77,7 +77,7 @@ public class KafkaLiteClientTest {
 
     @Test
     void testProduceCommand() throws IOException {
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             long offset = client.produce("my-topic", "my-key", "Hello Mock");
             assertEquals(999, offset);
         }
@@ -85,7 +85,7 @@ public class KafkaLiteClientTest {
 
     @Test
     void testConsumeCommand() throws IOException {
-        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port)) {
+        try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             client.consume("topic", 0);
         }
     }
