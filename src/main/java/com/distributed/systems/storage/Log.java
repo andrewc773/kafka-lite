@@ -211,6 +211,15 @@ public class Log {
         return this.nextOffset;
     }
 
+    /**
+     * Returns the absolute last written offset in the entire log.
+     * If the log is empty, returns -1.
+     */
+    public long getLastOffset() {
+        return nextOffset - 1;
+    }
+
+
     public long getSegmentCount() {
         return segments.size();
     }

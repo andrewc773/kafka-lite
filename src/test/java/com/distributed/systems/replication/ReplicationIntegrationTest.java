@@ -71,6 +71,34 @@ public class ReplicationIntegrationTest {
         assertEquals(1, fetched, "Follower should track group offsets independently");
     }
 
+    @Test
+    void testBatchReplication() throws Exception {
+        // Make these final or effectively final
+        final String host = "localhost";
+        final int leaderPort = 9001;
+        final int followerPort = 9002;
+        final String batchTopic = "batch-test";
+
+        KafkaLiteClient leaderClient = new KafkaLiteClient(host, leaderPort, "batch-group");
+
+        // Produce 150 messages
+        for (int i = 0; i < 150; i++) {
+            leaderClient.produce(batchTopic, "key-" + i, "data-" + i);
+        }
+
+        Thread.sleep(8000);
+
+        KafkaLiteClient followerClient = new KafkaLiteClient(host, followerPort, "batch-group");
+
+        for (int i = 0; i < 150; i++) {
+            final int currentOffset = i; // Create a final copy for the lambda
+            assertDoesNotThrow(() -> {
+                // Use the final copy here
+                followerClient.consume(batchTopic, currentOffset);
+            }, "Follower missing record " + i);
+        }
+    }
+
     @AfterEach
     void tearDown() {
         leader.stop();

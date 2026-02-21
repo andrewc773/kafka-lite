@@ -3,6 +3,7 @@ package com.distributed.systems.storage;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
@@ -129,6 +130,32 @@ public class LogSegmentTest {
         assertArrayEquals("Message 1".getBytes(), seg2.read(0).value());
         assertArrayEquals("Message 3".getBytes(), seg2.read(2).value());
         seg2.close();
+    }
+
+    @Test
+    void testSegmentRecoveryWithoutIndex() throws IOException {
+        Path dataPath = tempDir.resolve("0000000000.data");
+        long baseOffset = 0;
+        long interval = 4096;
+
+        LogSegment segment = new LogSegment(dataPath, baseOffset, interval);
+        segment.append("user".getBytes(), "Andrew".getBytes());
+        segment.append("role".getBytes(), "Engineer".getBytes());
+        segment.close();
+
+        // Manually delete the index file to force linear scan recovery
+        Path indexPath = tempDir.resolve("0000000000.index");
+        Files.deleteIfExists(indexPath);
+
+        //re-open and verify recovery
+        LogSegment recoveredSegment = new LogSegment(dataPath, baseOffset, interval);
+
+        // This should be 2 because we appended twice (0 and 1)
+        assertEquals(2, recoveredSegment.getLastOffset() + 1,
+                "Segment should have recovered nextOffset=2 via linear scan.");
+
+        LogRecord record = recoveredSegment.read(1);
+        assertEquals("Engineer", new String(record.value()));
     }
 
     @Test

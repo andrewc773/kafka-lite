@@ -195,4 +195,24 @@ public class LogTest {
         assertTrue(Files.deleteIfExists(logDir.resolve("0000000000.data")),
                 "Data file should be deletable after log is closed");
     }
+
+    @Test
+    void testLogRecovery() throws IOException {
+        BrokerConfig config = new BrokerConfig();
+
+        Log log = new Log(tempDir, config);
+        log.append("key1".getBytes(), "value1".getBytes());
+        log.append("key2".getBytes(), "value2".getBytes());
+        long lastOffsetBeforeClose = log.getLastOffset();
+        log.close();
+
+        Log recoveredLog = new Log(tempDir, config);
+
+        assertEquals(lastOffsetBeforeClose, recoveredLog.getLastOffset(),
+                "Recovered log should have the same last offset.");
+
+        LogRecord record = recoveredLog.read(0);
+        assertNotNull(record);
+        assertEquals("key1", new String(record.key()));
+    }
 }
