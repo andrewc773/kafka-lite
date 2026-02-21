@@ -52,4 +52,8 @@ public class BrokerConfig {
     public long getCleanupIntervalMs() {
         return Long.parseLong(properties.getProperty("storage.cleanup.interval.ms", "60000"));
     }
+
+    public void setProperty(String key, String value) {
+        properties.setProperty(key, value);
+    }
 }

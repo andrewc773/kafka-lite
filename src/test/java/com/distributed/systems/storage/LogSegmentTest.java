@@ -76,10 +76,7 @@ public class LogSegmentTest {
         segment.append(defaultKey, "Message-0".getBytes());
         segment.append(defaultKey, "Message-1".getBytes());
 
-        assertThrows(IOException.class, () -> {
-            segment.read(10);
-        }, "Reading a non-existent offset should throw IOException");
-
+        assertNull(segment.read(10));
         segment.close();
     }
 

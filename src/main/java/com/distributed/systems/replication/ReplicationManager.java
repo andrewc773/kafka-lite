@@ -2,9 +2,15 @@ package com.distributed.systems.replication;
 
 
 import com.distributed.systems.config.BrokerConfig;
+import com.distributed.systems.storage.Log;
 import com.distributed.systems.storage.TopicManager;
 import com.distributed.systems.util.Logger;
+import com.distributed.systems.util.Protocol;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.Socket;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -40,23 +46,44 @@ public class ReplicationManager {
         );
     }
 
+
+    /* Checks all topics of leader to check if those exist yet in follower server. If not, create before we catch up to speed*/
     private void refreshFetchers() {
-        for (String topic : topicManager.getAllTopics()) {
+        try (Socket socket = new Socket(config.getLeaderHost(), config.getLeaderPort());
+             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+             DataInputStream in = new DataInputStream(socket.getInputStream())) {
 
-            if (!activeFetchers.containsKey(topic)) {
-                Logger.logBootstrap("Initializing new replica fetcher for topic: " + topic);
+            out.writeUTF(Protocol.CMD_LIST_TOPICS);
+            out.flush();
 
-                ReplicaFetcher fetcher = new ReplicaFetcher(
-                        topic,
-                        topicManager.getLogIfExits(topic),
-                        config.getLeaderHost(),
-                        config.getLeaderPort()
-                );
+            int topicCount = in.readInt();
 
-                activeFetchers.put(topic, fetcher);
-                fetcherPool.submit(fetcher);
+            for (int i = 0; i < topicCount; i++) {
 
+                String topic = in.readUTF();
+
+                if (!activeFetchers.containsKey(topic)) {
+                    Logger.logBootstrap("Discovered new topic on leader: " + topic);
+
+                    Log localLog = topicManager.getOrCreateLog(topic);
+
+                    ReplicaFetcher fetcher = new ReplicaFetcher(
+                            topic,
+                            localLog,
+                            config.getLeaderHost(),
+                            config.getLeaderPort()
+                    );
+
+                    activeFetchers.put(topic, fetcher);
+                    fetcherPool.submit(fetcher);
+                }
             }
+
+            out.writeUTF(Protocol.CMD_QUIT);
+            out.flush();
+
+        } catch (IOException e) {
+            Logger.logError("Failed to discover topics from leader: " + e.getMessage());
         }
     }
 

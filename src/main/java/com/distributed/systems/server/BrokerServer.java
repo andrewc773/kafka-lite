@@ -1,6 +1,7 @@
 package com.distributed.systems.server;
 
 import com.distributed.systems.config.BrokerConfig;
+import com.distributed.systems.replication.ReplicationManager;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.storage.LogRecord;
 import com.distributed.systems.storage.OffsetManager;
@@ -28,6 +29,7 @@ public class BrokerServer {
     private final OffsetManager offsetManager;
     private final int port;
     private final BrokerConfig config;
+    private final ReplicationManager replicationManager;
 
     private volatile boolean running = true;
 
@@ -40,9 +42,13 @@ public class BrokerServer {
         this.topicManager = new TopicManager(Paths.get(dataDir), config);
         this.offsetManager = new OffsetManager(this.topicManager);
         this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
+        this.replicationManager = new ReplicationManager(this.topicManager, config);
     }
 
     public void start() {
+        replicationManager.start();
+        printBanner();
+
         try (ServerSocket ss = new ServerSocket(port)) {
             this.serverSocket = ss;
             while (running) {
@@ -63,6 +69,9 @@ public class BrokerServer {
             topicManager.shutdown(); // Flush and close all files
             if (serverSocket != null) {
                 serverSocket.close();
+            }
+            if (replicationManager != null) {
+                replicationManager.shutdown();
             }
         } catch (IOException e) {
             Logger.logError("Error during server shutdown: " + e.getMessage());
@@ -110,6 +119,13 @@ public class BrokerServer {
 
         try {
             LogRecord record = log.read(offset);
+
+            if (record == null) {
+                out.writeBoolean(false);
+                out.writeUTF("Offset " + offset + " does not exist yet.");
+                out.flush();
+                return;
+            }
 
             // Response: [Found=True] [Timestamp] [KeyLen] [Key] [ValLen] [Value]
             out.writeBoolean(true); // Status OK
@@ -186,12 +202,16 @@ public class BrokerServer {
                     handleProduce(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_CONSUME)) {
                     handleConsume(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_REPLICA_FETCH)) {
+                    handleReplicaFetch(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_STATS)) {
                     handleStats(out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_OFFSET_COMMIT)) {
                     handleOffsetCommit(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_OFFSET_FETCH)) {
                     handleOffsetFetch(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_LIST_TOPICS)) {
+                    handleListTopics(out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     break;
                 } else {
@@ -248,6 +268,15 @@ public class BrokerServer {
         Logger.logNetwork("Sent " + batch.size() + " records to replica starting at " + startOffset);
     }
 
+    // The implementation
+    private void handleListTopics(DataOutputStream out) throws IOException {
+        List<String> topics = topicManager.getAllTopics();
+        out.writeInt(topics.size());
+        for (String topic : topics) {
+            out.writeUTF(topic);
+        }
+        out.flush();
+    }
 
     private void printBanner() {
         String banner = """
