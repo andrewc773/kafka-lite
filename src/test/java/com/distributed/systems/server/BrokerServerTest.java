@@ -1,6 +1,7 @@
 package com.distributed.systems.server;
 
 import com.distributed.systems.client.KafkaLiteClient;
+import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.util.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +30,7 @@ public class BrokerServerTest {
 
     @BeforeEach
     public void setup() throws IOException {
-        server = new BrokerServer(testPort, tempDir.toString());
+        server = new BrokerServer(testPort, tempDir.toString(), createDefaultConfig());
         // Run server in a background thread so the test isn't blocked
         serverThread = new Thread(() -> server.start());
         serverThread.start();
@@ -46,6 +47,11 @@ public class BrokerServerTest {
         if (server != null) {
             server.stop();
         }
+    }
+
+    // Helper to create a standard config for tests
+    private BrokerConfig createDefaultConfig() {
+        return new BrokerConfig(2048, 600000, 4096, 30000);
     }
 
     @Test
@@ -112,7 +118,7 @@ public class BrokerServerTest {
     @Test
     void testBrokerUnderHighContention() throws Exception {
         int port = 9093;
-        BrokerServer server = new BrokerServer(port, Files.createTempDirectory("stress-test").toString());
+        BrokerServer server = new BrokerServer(port, Files.createTempDirectory("stress-test").toString(), createDefaultConfig());
 
         // Start server in its own thread
         Thread serverThread = new Thread(server::start);
@@ -154,7 +160,7 @@ public class BrokerServerTest {
         int port = 9097;
         String dataPath = tempDir.toString();
 
-        BrokerServer server = new BrokerServer(port, dataPath);
+        BrokerServer server = new BrokerServer(port, dataPath, createDefaultConfig());
         new Thread(server::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
@@ -183,7 +189,7 @@ public class BrokerServerTest {
         int port = 9098;
         String dataPath = tempDir.toString();
 
-        BrokerServer server1 = new BrokerServer(port, dataPath);
+        BrokerServer server1 = new BrokerServer(port, dataPath, createDefaultConfig());
         new Thread(server1::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
@@ -192,7 +198,7 @@ public class BrokerServerTest {
         server1.stop();
 
         // rRestart a fresh server on the same path
-        BrokerServer server2 = new BrokerServer(port, dataPath);
+        BrokerServer server2 = new BrokerServer(port, dataPath, createDefaultConfig());
         new Thread(server2::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {

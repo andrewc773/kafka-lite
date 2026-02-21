@@ -1,5 +1,6 @@
 package com.distributed.systems;
 
+import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.server.BrokerServer;
 
 import java.nio.file.Paths;
@@ -17,7 +18,7 @@ public class Main {
             System.out.println("=".repeat(40) + "\u001B[0m");
 
             // Internally creating log manager and socket
-            BrokerServer server = new BrokerServer(port, dataDir);
+            BrokerServer server = new BrokerServer(port, dataDir, new BrokerConfig());
 
             System.out.printf("[BOOT] Port: %d%n", port);
             System.out.printf("[BOOT] Data Directory: %s%n", Paths.get(dataDir).toAbsolutePath());

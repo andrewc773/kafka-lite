@@ -25,15 +25,17 @@ public class BrokerServer {
     private final TopicManager topicManager;
     private final OffsetManager offsetManager;
     private final int port;
+    private final BrokerConfig config;
 
     private volatile boolean running = true;
 
     private final MetricsCollector metrics = new MetricsCollector();
 
 
-    public BrokerServer(int port, String dataDir) throws IOException {
+    public BrokerServer(int port, String dataDir, BrokerConfig config) throws IOException {
         this.port = port;
-        this.topicManager = new TopicManager(Paths.get(dataDir), new BrokerConfig());
+        this.config = config;
+        this.topicManager = new TopicManager(Paths.get(dataDir), config);
         this.offsetManager = new OffsetManager(this.topicManager);
         this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
     }
@@ -172,6 +174,13 @@ public class BrokerServer {
                 }
 
                 if (command.equalsIgnoreCase(Protocol.CMD_PRODUCE)) {
+                    // Only leaders accept writes
+                    if (!config.isLeader()) {
+                        out.writeLong(-1); // Signal error offset
+                        out.writeUTF("ERR_NOT_LEADER");
+                        out.flush();
+                        continue;
+                    }
                     handleProduce(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_CONSUME)) {
                     handleConsume(in, out);
