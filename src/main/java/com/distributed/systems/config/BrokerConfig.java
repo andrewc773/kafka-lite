@@ -24,6 +24,19 @@ public class BrokerConfig {
         properties.setProperty("storage.cleanup.interval.ms", String.valueOf(cleanupInterval));
     }
 
+    public boolean isLeader() {
+        // Default to true so a single broker works out of the box
+        return Boolean.parseBoolean(properties.getProperty("replication.is.leader", "true"));
+    }
+
+    public String getLeaderHost() {
+        return properties.getProperty("replication.leader.host", "localhost");
+    }
+
+    public int getLeaderPort() {
+        return Integer.parseInt(properties.getProperty("replication.leader.port", "9092"));
+    }
+
     public long getMaxSegmentSize() {
         return Long.parseLong(properties.getProperty("storage.max.segment.size", "2048"));
     }
