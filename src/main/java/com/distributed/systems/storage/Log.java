@@ -206,6 +206,10 @@ public class Log {
         }
     }
 
+    public long getNextOffset() {
+        return this.nextOffset;
+    }
+
     public long getSegmentCount() {
         return segments.size();
     }

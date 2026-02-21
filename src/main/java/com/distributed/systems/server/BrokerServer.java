@@ -13,6 +13,8 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -206,6 +208,46 @@ public class BrokerServer {
             } catch (IOException e) { /* Ignore */ }
         }
     }
+
+    /**
+     * Serves a batch of records to a Follower.
+     */
+    private void handleReplicaFetch(DataInputStream in, DataOutputStream out) throws IOException {
+        String topic = in.readUTF();
+        long startOffset = in.readLong();
+        int maxBatchSize = 100;
+
+        Log log = topicManager.getLogIfExits(topic);
+        if (log == null) {
+            out.writeInt(0); // no records found
+            out.flush();
+            return;
+        }
+
+        List<LogRecord> batch = new ArrayList<LogRecord>();
+        for (int i = 0; i < maxBatchSize; i++) {
+            LogRecord record = log.read(startOffset + i);
+            if (record == null) break;
+            batch.add(record);
+        }
+
+        // send count
+        out.writeInt(batch.size());
+
+        // stream records in binary format
+        for (LogRecord record : batch) {
+            out.writeLong(record.offset());
+            out.writeLong(record.timestamp());
+            out.writeInt(record.key().length);
+            out.write(record.key());
+            out.writeInt(record.value().length);
+            out.write(record.value());
+        }
+
+        out.flush();
+        Logger.logNetwork("Sent " + batch.size() + " records to replica starting at " + startOffset);
+    }
+
 
     private void printBanner() {
         String banner = """
