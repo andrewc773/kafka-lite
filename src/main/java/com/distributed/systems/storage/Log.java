@@ -123,12 +123,13 @@ public class Log {
      * Reads data based on a logical offset
      * */
     public LogRecord read(long offset) throws IOException {
+
         // Find the segment that contains this offset
         // floorEntry finds the greatest key less than or equal to the given offset
 
         Map.Entry<Long, LogSegment> entry = segments.floorEntry(offset);
 
-        Logger.logDebug("last offset" + entry.getValue().getLastOffset());
+        Logger.logDebug("last offset " + entry.getValue().getLastOffset());
 
         if (entry == null) {
             throw new IOException("Offset " + offset + " is before the start of the log.");
@@ -205,6 +206,19 @@ public class Log {
             segment.close();
         }
     }
+
+    public long getNextOffset() {
+        return this.nextOffset;
+    }
+
+    /**
+     * Returns the absolute last written offset in the entire log.
+     * If the log is empty, returns -1.
+     */
+    public long getLastOffset() {
+        return nextOffset - 1;
+    }
+
 
     public long getSegmentCount() {
         return segments.size();

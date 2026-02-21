@@ -1,6 +1,7 @@
 package com.distributed.systems.server;
 
 import com.distributed.systems.config.BrokerConfig;
+import com.distributed.systems.replication.ReplicationManager;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.storage.LogRecord;
 import com.distributed.systems.storage.OffsetManager;
@@ -13,6 +14,8 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -25,20 +28,27 @@ public class BrokerServer {
     private final TopicManager topicManager;
     private final OffsetManager offsetManager;
     private final int port;
+    private final BrokerConfig config;
+    private final ReplicationManager replicationManager;
 
     private volatile boolean running = true;
 
     private final MetricsCollector metrics = new MetricsCollector();
 
 
-    public BrokerServer(int port, String dataDir) throws IOException {
+    public BrokerServer(int port, String dataDir, BrokerConfig config) throws IOException {
         this.port = port;
-        this.topicManager = new TopicManager(Paths.get(dataDir), new BrokerConfig());
+        this.config = config;
+        this.topicManager = new TopicManager(Paths.get(dataDir), config);
         this.offsetManager = new OffsetManager(this.topicManager);
         this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
+        this.replicationManager = new ReplicationManager(this.topicManager, config);
     }
 
     public void start() {
+        replicationManager.start();
+        printBanner();
+
         try (ServerSocket ss = new ServerSocket(port)) {
             this.serverSocket = ss;
             while (running) {
@@ -59,6 +69,9 @@ public class BrokerServer {
             topicManager.shutdown(); // Flush and close all files
             if (serverSocket != null) {
                 serverSocket.close();
+            }
+            if (replicationManager != null) {
+                replicationManager.shutdown();
             }
         } catch (IOException e) {
             Logger.logError("Error during server shutdown: " + e.getMessage());
@@ -106,6 +119,13 @@ public class BrokerServer {
 
         try {
             LogRecord record = log.read(offset);
+
+            if (record == null) {
+                out.writeBoolean(false);
+                out.writeUTF("Offset " + offset + " does not exist yet.");
+                out.flush();
+                return;
+            }
 
             // Response: [Found=True] [Timestamp] [KeyLen] [Key] [ValLen] [Value]
             out.writeBoolean(true); // Status OK
@@ -172,15 +192,28 @@ public class BrokerServer {
                 }
 
                 if (command.equalsIgnoreCase(Protocol.CMD_PRODUCE)) {
+                    // Only leaders accept writes
+                    if (!config.isLeader()) {
+                        out.writeLong(-1); // Signal error offset
+                        out.writeUTF("ERR_NOT_LEADER");
+                        out.flush();
+                        continue;
+                    }
                     handleProduce(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_CONSUME)) {
                     handleConsume(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_REPLICA_FETCH)) {
+                    handleReplicaFetch(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_STATS)) {
                     handleStats(out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_OFFSET_COMMIT)) {
                     handleOffsetCommit(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_OFFSET_FETCH)) {
                     handleOffsetFetch(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_LIST_TOPICS)) {
+                    handleListTopics(out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_PROMOTE)) {
+                    handlePromote(out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     break;
                 } else {
@@ -196,6 +229,80 @@ public class BrokerServer {
                 socket.close(); // Ensure socket is closed
             } catch (IOException e) { /* Ignore */ }
         }
+    }
+
+    /**
+     * Serves a batch of records to a Follower.
+     */
+    private void handleReplicaFetch(DataInputStream in, DataOutputStream out) throws IOException {
+        String topic = in.readUTF();
+        long startOffset = in.readLong();
+        int maxBatchSize = 100;
+
+        Log log = topicManager.getLogIfExits(topic);
+        if (log == null) {
+            out.writeInt(0); // no records found
+            out.flush();
+            return;
+        }
+
+        List<LogRecord> batch = new ArrayList<LogRecord>();
+        for (int i = 0; i < maxBatchSize; i++) {
+            LogRecord record = log.read(startOffset + i);
+            if (record == null) break;
+            batch.add(record);
+        }
+
+        // send count
+        out.writeInt(batch.size());
+
+        // stream records in binary format
+        for (LogRecord record : batch) {
+            out.writeLong(record.offset());
+            out.writeLong(record.timestamp());
+            out.writeInt(record.key().length);
+            out.write(record.key());
+            out.writeInt(record.value().length);
+            out.write(record.value());
+        }
+
+        out.flush();
+        Logger.logNetwork("Sent " + batch.size() + " records to replica starting at " + startOffset);
+    }
+
+    private void handleListTopics(DataOutputStream out) throws IOException {
+        List<String> topics = topicManager.getAllTopics();
+        out.writeInt(topics.size());
+        for (String topic : topics) {
+            out.writeUTF(topic);
+        }
+        out.flush();
+    }
+
+    private void handlePromote(DataOutputStream out) throws IOException {
+        promoteToLeader(); // Call the core logic
+        out.writeUTF("PROMOTED_SUCCESSFULLY");
+        out.flush();
+    }
+
+    public void promoteToLeader() {
+        if (config.isLeader()) {
+            return;
+        }
+
+        Logger.logBootstrap(">>> PROMOTION TRIGGERED: Transitioning to LEADER mode <<<");
+
+        // 1. Update Config
+        config.setProperty("replication.is.leader", "true");
+
+        // 2. Stop the Replication Manager
+        if (replicationManager != null) {
+            replicationManager.shutdown();
+        }
+    }
+
+    public ReplicationManager getReplicationManager() {
+        return this.replicationManager;
     }
 
     private void printBanner() {

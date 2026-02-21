@@ -140,7 +140,7 @@ public class LogSegment {
 
     public LogRecord read(long targetOffset) throws IOException {
         if (targetOffset >= currentOffset) {
-            throw new IOException("Offset " + targetOffset + " does not exist yet. Latest offset: " + (currentOffset - 1));
+            return null;
         }
 
         if (targetOffset < baseOffset) {

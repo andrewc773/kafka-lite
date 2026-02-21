@@ -1,6 +1,7 @@
 package com.distributed.systems.storage;
 
 import com.distributed.systems.client.KafkaLiteClient;
+import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.server.BrokerServer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,7 +21,7 @@ public class TopicIntegrationTest {
 
     @BeforeEach
     void setup() throws IOException {
-        server = new BrokerServer(port, tempDir.toString());
+        server = new BrokerServer(port, tempDir.toString(), new BrokerConfig());
         new Thread(server::start).start();
         // Small sleep to ensure server is bound to port
         try {
@@ -75,7 +76,7 @@ public class TopicIntegrationTest {
         int port = 9099;
         String dataPath = tempDir.toString();
 
-        BrokerServer server1 = new BrokerServer(port, dataPath);
+        BrokerServer server1 = new BrokerServer(port, dataPath, new BrokerConfig());
         new Thread(server1::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
@@ -92,7 +93,7 @@ public class TopicIntegrationTest {
 
         // --- The Resurrection ---
         // We point a completely fresh server at the same directory
-        BrokerServer server2 = new BrokerServer(port, dataPath);
+        BrokerServer server2 = new BrokerServer(port, dataPath, new BrokerConfig());
         new Thread(server2::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {

@@ -1,6 +1,7 @@
 package com.distributed.systems.storage;
 
 import com.distributed.systems.client.KafkaLiteClient;
+import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.server.BrokerServer;
 import org.junit.jupiter.api.*;
 
@@ -25,7 +26,7 @@ public class OffsetIntegrationTest {
             Files.walk(Paths.get(DATA_DIR)).sorted(Comparator.reverseOrder())
                     .map(Path::toFile).forEach(java.io.File::delete);
         }
-        server = new BrokerServer(PORT, DATA_DIR);
+        server = new BrokerServer(PORT, DATA_DIR, new BrokerConfig());
         new Thread(server::start).start();
 
         // Give the server a moment to bind to the port
