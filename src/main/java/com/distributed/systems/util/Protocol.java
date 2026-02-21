@@ -7,6 +7,7 @@ public class Protocol {
     public static final String CMD_QUIT = "QUIT";
     public static final String CMD_OFFSET_COMMIT = "OFFSET_COMMIT";
     public static final String CMD_OFFSET_FETCH = "OFFSET_FETCH";
+    public static final String CMD_REPLICA_FETCH = "REPLICA_FETCH";
 
     // Responses
     public static final String RESP_SUCCESS_PREFIX = "SUCCESS: Message stored at OFFSET ";
