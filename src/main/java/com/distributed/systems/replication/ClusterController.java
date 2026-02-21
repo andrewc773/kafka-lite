@@ -14,6 +14,8 @@ public class ClusterController implements Runnable {
     private final int leaderPort;
     private final String followerHost;
     private final int followerPort;
+    private final int FAILURE_THRESHOLD = 3;
+    private int consecutiveFailures = 0;
 
     public ClusterController(String leaderHost, int leaderPort, String followerHost, int followerPort) {
         this.leaderHost = leaderHost;
@@ -24,11 +26,23 @@ public class ClusterController implements Runnable {
 
     @Override
     public void run() {
-        while (true) {
+        Logger.logBootstrap("ClusterController started. Monitoring Leader: " + leaderHost + ":" + leaderPort);
+
+        while (!Thread.currentThread().isInterrupted()) {
             if (!isAlive(leaderHost, leaderPort)) {
-                Logger.logError("LEADER IS DOWN! Triggering Failover...");
-                promote(followerHost, followerPort);
-                break;
+                consecutiveFailures++;
+                Logger.logError("Heartbeat failed (" + consecutiveFailures + "/" + FAILURE_THRESHOLD + ")");
+
+                if (consecutiveFailures >= FAILURE_THRESHOLD) {
+                    Logger.logError("CRITICAL: Leader confirmed down. Initiating failover to " + followerHost);
+                    promote(followerHost, followerPort);
+                    break;
+                } else {
+                    if (consecutiveFailures > 0) {
+                        Logger.logInfo("Leader recovered after " + consecutiveFailures + " failed attempt(s). Resetting counter.");
+                    }
+                    consecutiveFailures = 0;
+                }
             }
             try {
                 Thread.sleep(2000); // check every 2 seconds
