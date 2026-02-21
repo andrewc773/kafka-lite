@@ -44,28 +44,21 @@ public class ReplicationIntegrationTest {
 
     @Test
     void testReplicationAndOffsetTracking() throws Exception {
-        // Use Group ID "test-group"
         KafkaLiteClient leaderClient = new KafkaLiteClient("localhost", 9001, "test-group");
 
-        // 1. Produce to Leader
         leaderClient.produce(TOPIC, "order1", "iPhone");
         leaderClient.produce(TOPIC, "order2", "MacBook");
 
 
-        // 2. WAIT for Discovery (Manager polls every 5s) + Sync
         System.out.println("Waiting for ReplicationManager to discover topic...");
         Thread.sleep(10000);
 
-        // 3. Consume from Follower (Client connects to 9002)
         KafkaLiteClient followerClient = new KafkaLiteClient("localhost", 9002, "test-group");
 
-        // We expect to find the data there
-        // Note: You might need to update your client.consume to return the record
-        // instead of just printing it for the assertion to work.
+
         assertDoesNotThrow(() -> followerClient.consume(TOPIC, 0));
         assertDoesNotThrow(() -> followerClient.consume(TOPIC, 1));
 
-        // 4. Verify Offset Management on Follower
         followerClient.commitOffset(TOPIC, 1);
         long fetched = followerClient.fetchOffset(TOPIC);
         assertEquals(1, fetched, "Follower should track group offsets independently");
