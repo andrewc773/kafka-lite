@@ -6,6 +6,9 @@ import com.distributed.systems.util.Logger;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class TopicManager {
@@ -48,6 +51,10 @@ public class TopicManager {
                 throw new RuntimeException("Could not initialize log for topic: " + name, e);
             }
         });
+    }
+
+    public List<String> getAllTopics() {
+        return new ArrayList<>(topicMap.keySet());
     }
 
     public Log getLogIfExits(String topicName) {
