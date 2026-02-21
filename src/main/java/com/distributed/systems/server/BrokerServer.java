@@ -212,6 +212,8 @@ public class BrokerServer {
                     handleOffsetFetch(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_LIST_TOPICS)) {
                     handleListTopics(out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_PROMOTE)) {
+                    handlePromote(out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     break;
                 } else {
@@ -268,7 +270,6 @@ public class BrokerServer {
         Logger.logNetwork("Sent " + batch.size() + " records to replica starting at " + startOffset);
     }
 
-    // The implementation
     private void handleListTopics(DataOutputStream out) throws IOException {
         List<String> topics = topicManager.getAllTopics();
         out.writeInt(topics.size());
@@ -276,6 +277,32 @@ public class BrokerServer {
             out.writeUTF(topic);
         }
         out.flush();
+    }
+
+    private void handlePromote(DataOutputStream out) throws IOException {
+        promoteToLeader(); // Call the core logic
+        out.writeUTF("PROMOTED_SUCCESSFULLY");
+        out.flush();
+    }
+
+    public void promoteToLeader() {
+        if (config.isLeader()) {
+            return;
+        }
+
+        Logger.logBootstrap(">>> PROMOTION TRIGGERED: Transitioning to LEADER mode <<<");
+
+        // 1. Update Config
+        config.setProperty("replication.is.leader", "true");
+
+        // 2. Stop the Replication Manager
+        if (replicationManager != null) {
+            replicationManager.shutdown();
+        }
+    }
+
+    public ReplicationManager getReplicationManager() {
+        return this.replicationManager;
     }
 
     private void printBanner() {

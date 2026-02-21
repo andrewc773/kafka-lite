@@ -92,5 +92,8 @@ public class ReplicationManager {
         fetcherPool.shutdownNow();
     }
 
+    public boolean isShutdown() {
+        return fetcherPool.isShutdown();
+    }
 
 }

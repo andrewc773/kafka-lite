@@ -67,3 +67,4 @@ replay_pid*
 /integration_test_data/
 /kafka-logs/
 /test_data_offsets/
+/data/
