@@ -2,12 +2,14 @@ package com.distributed.systems.replication;
 
 import com.distributed.systems.client.KafkaLiteClient;
 import com.distributed.systems.config.BrokerConfig;
+import com.distributed.systems.model.BrokerAddress;
 import com.distributed.systems.server.BrokerServer;
 import org.junit.jupiter.api.*;
 
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.Comparator;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -40,8 +42,11 @@ public class ClusterControllerIntegrationTest {
         follower = new BrokerServer(FOLLOWER_PORT, "data/follower", followerConfig);
         new Thread(follower::start).start();
 
+        BrokerAddress leaderAddress = new BrokerAddress("localhost", LEADER_PORT);
+        List<BrokerAddress> followers = List.of(new BrokerAddress("localhost", FOLLOWER_PORT));
 
-        ClusterController controller = new ClusterController("localhost", LEADER_PORT, "localhost", FOLLOWER_PORT);
+        ClusterController controller = new ClusterController(leaderAddress, followers);
+
         controllerThread = new Thread(controller);
         controllerThread.start();
 

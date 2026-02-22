@@ -12,6 +12,7 @@ public class Protocol {
     public static final String CMD_PROMOTE = "PROMOTE";
     public static final String CMD_GET_OFFSET = "GET_OFFSET";
     public static final String CMD_DEMOTE = "DEMOTE";
+    public static final String CMD_UPDATE_LEADER = "CMD_UPDATE_LEADER";
 
     // Responses
     public static final String RESP_SUCCESS_PREFIX = "SUCCESS: Message stored at OFFSET ";

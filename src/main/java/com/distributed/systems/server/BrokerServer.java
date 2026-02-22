@@ -218,6 +218,8 @@ public class BrokerServer {
                     handleGetOffset(in, out);
                 } else if (command.equals(Protocol.CMD_DEMOTE)) {
                     handleDemote(in, out);
+                } else if (command.equalsIgnoreCase(Protocol.CMD_UPDATE_LEADER)) {
+                    handleUpdateLeader(in);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     break;
                 } else {
@@ -259,6 +261,23 @@ public class BrokerServer {
 
         out.writeUTF("DEMOTED_SUCCESSFULLY");
         out.flush();
+    }
+
+    private void handleUpdateLeader(DataInputStream in) throws IOException {
+        String newLeaderHost = in.readUTF();
+        int newLeaderPort = in.readInt();
+
+        Logger.logInfo("Updating leader source to: " + newLeaderHost + ":" + newLeaderPort);
+
+        // Update config so if the server restarts, it remembers the new leader
+        config.setProperty("replication.leader.host", newLeaderHost);
+        config.setProperty("replication.leader.port", String.valueOf(newLeaderPort));
+
+        if (replicationManager != null) {
+            replicationManager.shutdown();
+            replicationManager = new ReplicationManager(topicManager, config);
+            replicationManager.start();
+        }
     }
 
     /*Demotes a previous leader to a follower node*/
