@@ -197,11 +197,13 @@ public class BrokerServerTest {
         }
         server1.stop();
 
-        // rRestart a fresh server on the same path
+        // restart a fresh server on the same path
         BrokerServer server2 = new BrokerServer(port, dataPath, createDefaultConfig());
         new Thread(server2::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
+
+
             // If recovery logic works, this topic should be 'discovered' on boot
             // and we can consume from offset 0 immediately.
             assertDoesNotThrow(() -> client.consume("recovery-topic", 0));

@@ -37,12 +37,12 @@ public class ClusterController implements Runnable {
                     Logger.logError("CRITICAL: Leader confirmed down. Initiating failover to " + followerHost);
                     promote(followerHost, followerPort);
                     break;
-                } else {
-                    if (consecutiveFailures > 0) {
-                        Logger.logInfo("Leader recovered after " + consecutiveFailures + " failed attempt(s). Resetting counter.");
-                    }
-                    consecutiveFailures = 0;
                 }
+            } else {
+                if (consecutiveFailures > 0) {
+                    Logger.logInfo("Leader recovered after " + consecutiveFailures + " failed attempt(s). Resetting counter.");
+                }
+                consecutiveFailures = 0;
             }
             try {
                 Thread.sleep(2000); // check every 2 seconds

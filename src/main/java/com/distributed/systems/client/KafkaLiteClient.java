@@ -150,21 +150,47 @@ public class KafkaLiteClient implements AutoCloseable {
     /* Helper to execute network action and retry once if the connection is lost
      * */
     private <T> T executeWithRetry(CommandAction<T> action) throws IOException {
-        try {
-            return action.execute();
-        } catch (IOException e) {
-            Logger.logError("Socket error: " + e.getMessage());
-            Logger.logInfo("Reconnecting...");
+        int maxAttempts = 5;
+        int attempt = 0;
+        int backoffMs = 1000;
 
-            // Cleanup
+        while (true) {
             try {
-                if (socket != null) socket.close();
-            } catch (Exception ignored) {
-            }
-            connect();
+                if (socket == null || socket.isClosed()) {
+                    connect();
+                }
+                return action.execute();
+            } catch (IOException e) {
+                attempt++;
+                Logger.logError("Socket error (Attempt " + attempt + "/" + maxAttempts + "): " + e.getMessage());
 
-            return action.execute();
+                //clean up dead socket
+                closeQuietly();
+
+                if (attempt >= maxAttempts) {
+                    throw new IOException("Failed to execute command after " + maxAttempts + " attempts.", e);
+                }
+
+                Logger.logInfo("Retrying in " + backoffMs + "ms...");
+                try {
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Retry interrupted", ie);
+                }
+
+                backoffMs *= 2;
+            }
+
         }
+    }
+
+    private void closeQuietly() {
+        try {
+            if (socket != null) socket.close();
+        } catch (IOException ignored) {
+        }
+        socket = null; // Forces connect() to create a new one next time
     }
 
     /**

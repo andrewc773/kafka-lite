@@ -64,7 +64,7 @@ public class ClusterControllerIntegrationTest {
         leader.stop();
 
         System.out.println("Waiting for ClusterController to detect failure...");
-        Thread.sleep(5000);
+        Thread.sleep(8000);
 
         // Verify the Follower is now a Leader by producing to it
         // If promotion failed, this client will receive an ERR_NOT_LEADER or -1 offset
@@ -89,9 +89,39 @@ public class ClusterControllerIntegrationTest {
         assertFalse(config.isLeader());
 
         server.promoteToLeader();
-        
+
         assertTrue(config.isLeader());
         assertTrue(server.getReplicationManager().isShutdown());
+    }
+
+    @Test
+    void testZombieLeaderScenario() throws Exception {
+        KafkaLiteClient client = new KafkaLiteClient("localhost", 9001, "admin");
+        client.produce("zombie-topic", "init", "data-0");
+        Thread.sleep(6000); // Wait for Follower to sync
+
+        System.out.println(">>> KILLING LEADER (9001) <<<");
+        leader.stop();
+
+        System.out.println("Waiting for Controller to confirm death and promote Follower...");
+        Thread.sleep(8000);
+
+        // restart the old leader on 9001
+        System.out.println(">>> RESTARTING ZOMBIE LEADER (9001) <<<");
+        BrokerConfig zombieConfig = new BrokerConfig();
+        zombieConfig.setProperty("replication.is.leader", "true"); // it still thinks it's the leadereee
+        BrokerServer zombie = new BrokerServer(9001, "data/leader", zombieConfig);
+        new Thread(zombie::start).start();
+        Thread.sleep(2000); // Let it boot
+
+        // clients should now be talking to the new Leader (9002)
+        KafkaLiteClient newLeaderClient = new KafkaLiteClient("localhost", 9002, "admin");
+        long offset = newLeaderClient.produce("zombie-topic", "new-boss", "data-1");
+
+        assertEquals(1, offset, "The New Leader (9002) should accept writes at the correct next offset.");
+
+        // Cleanup the zombie
+        zombie.stop();
     }
 
 
