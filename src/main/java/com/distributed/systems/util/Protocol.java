@@ -10,6 +10,8 @@ public class Protocol {
     public static final String CMD_REPLICA_FETCH = "REPLICA_FETCH";
     public static final String CMD_LIST_TOPICS = "LIST_TOPICS";
     public static final String CMD_PROMOTE = "PROMOTE";
+    public static final String CMD_GET_OFFSET = "GET_OFFSET";
+    public static final String CMD_DEMOTE = "DEMOTE";
 
     // Responses
     public static final String RESP_SUCCESS_PREFIX = "SUCCESS: Message stored at OFFSET ";

@@ -29,7 +29,7 @@ public class BrokerServer {
     private final OffsetManager offsetManager;
     private final int port;
     private final BrokerConfig config;
-    private final ReplicationManager replicationManager;
+    private ReplicationManager replicationManager;
 
     private volatile boolean running = true;
 
@@ -214,6 +214,10 @@ public class BrokerServer {
                     handleListTopics(out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_PROMOTE)) {
                     handlePromote(out);
+                } else if (command.equals(Protocol.CMD_GET_OFFSET)) {
+                    handleGetOffset(in, out);
+                } else if (command.equals(Protocol.CMD_DEMOTE)) {
+                    handleDemote(in, out);
                 } else if (command.equalsIgnoreCase(Protocol.CMD_QUIT)) {
                     break;
                 } else {
@@ -229,6 +233,54 @@ public class BrokerServer {
                 socket.close(); // Ensure socket is closed
             } catch (IOException e) { /* Ignore */ }
         }
+    }
+
+    protected void handleGetOffset(DataInputStream in, DataOutputStream out) throws IOException {
+        String topic = in.readUTF();
+        Log log = topicManager.getLogIfExits(topic);
+        long offset = (log != null) ? log.getNextOffset() : -1L;
+
+        out.writeLong(offset);
+        out.flush();
+
+        if (offset == -1L) {
+            Logger.logWarning("Controller requested offset for unknown topic: " + topic);
+        } else {
+            Logger.logNetwork("Reported offset " + offset + " for " + topic);
+        }
+    }
+
+    protected void handleDemote(DataInputStream in, DataOutputStream out) throws IOException {
+        String newLeaderHost = in.readUTF();
+        int newLeaderPort = in.readInt();
+
+        // The core logic we discussed:
+        demoteToFollower(newLeaderHost, newLeaderPort);
+
+        out.writeUTF("DEMOTED_SUCCESSFULLY");
+        out.flush();
+    }
+
+    /*Demotes a previous leader to a follower node*/
+    public void demoteToFollower(String leaderHost, int leaderPort) {
+        if (!config.isLeader()) {
+            return;
+        }
+        Logger.logBootstrap(">>> DEMOTION: Transitioning from LEADER to FOLLOWER <<<");
+
+        config.setProperty("replication.is.leader", "false");
+        config.setProperty("replication.leader.host", leaderHost);
+        config.setProperty("replication.leader.port", String.valueOf(leaderPort));
+
+        // kill the ReplicationManager if it was sitting idle and restart it so it begins fetching from the authority
+        if (replicationManager != null) {
+            replicationManager.shutdown();
+
+            // Re-initialize with the updated config (now as a follower)
+            replicationManager = new ReplicationManager(topicManager, config);
+            replicationManager.start();
+        }
+
     }
 
     /**
@@ -303,6 +355,14 @@ public class BrokerServer {
 
     public ReplicationManager getReplicationManager() {
         return this.replicationManager;
+    }
+
+    protected TopicManager getTopicManager() {
+        return this.topicManager;
+    }
+
+    protected BrokerConfig getConfig() {
+        return this.config;
     }
 
     private void printBanner() {
