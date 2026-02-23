@@ -380,7 +380,7 @@ public class BrokerServer {
         return this.topicManager;
     }
 
-    protected BrokerConfig getConfig() {
+    public BrokerConfig getConfig() {
         return this.config;
     }
 
