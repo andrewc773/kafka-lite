@@ -53,7 +53,8 @@ public class ClusterController implements Runnable {
             try {
                 Thread.sleep(2000); // check every 2 seconds
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt();
+                Logger.logInfo("ClusterController shutting down due to interruption.");
             }
         }
     }
