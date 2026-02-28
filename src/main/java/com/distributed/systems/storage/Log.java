@@ -183,8 +183,6 @@ public class Log {
             }
 
         }
-
-
     }
 
     /*
@@ -205,6 +203,52 @@ public class Log {
         for (LogSegment segment : segments.values()) {
             segment.close();
         }
+    }
+
+    /**
+     * Truncates the log so that the next message written will be at targetOffset.
+     * This may include future log segments.
+     * All data at or after targetOffset is permanently deleted.
+     */
+    public synchronized void truncate(long targetOffset) throws IOException {
+        if (targetOffset < 0) targetOffset = 0;
+
+        Logger.logWarning("!!! TRUNCATION TRIGGERED !!! Rewinding log to offset: " + targetOffset);
+
+        // identify segments to delete entirely (those starting after the target)
+        var tailMap = segments.tailMap(targetOffset, false);
+        var iterator = tailMap.entrySet().iterator();
+
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            LogSegment segment = entry.getValue();
+
+            Logger.logStorage("Deleting future segment: " + segment.getDataPath().getFileName());
+
+            segment.close();
+            Files.deleteIfExists(segment.getDataPath());
+
+            // Delete companion index file
+            Path indexPath = segment.getDataPath().resolveSibling(
+                    segment.getDataPath().getFileName().toString().replace(".data", ".index"));
+            Files.deleteIfExists(indexPath);
+
+            iterator.remove();
+        }
+
+        Map.Entry<Long, LogSegment> entry = segments.floorEntry(targetOffset);
+
+        if (entry != null) {
+            this.activeSegment = entry.getValue();
+            activeSegment.truncate(targetOffset);
+        } else {
+            // If the entire log was deleted (target 0), start fresh
+            createNewSegment(0);
+        }
+
+        // Update the high-water mark for the next append
+        this.nextOffset = targetOffset;
+        Logger.logStorage("Log truncated. Next offset will be: " + nextOffset);
     }
 
     public long getNextOffset() {
