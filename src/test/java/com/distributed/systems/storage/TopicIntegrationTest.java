@@ -3,6 +3,7 @@ package com.distributed.systems.storage;
 import com.distributed.systems.client.KafkaLiteClient;
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.server.BrokerServer;
+import com.distributed.systems.util.FatalClientException;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -62,7 +63,7 @@ public class TopicIntegrationTest {
     public void testConsumeNonExistentTopic() throws IOException {
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
             // We expect the client to throw an exception because 'found' will be false
-            IOException exception = assertThrows(IOException.class, () -> {
+            Exception exception = assertThrows(FatalClientException.class, () -> {
                 client.consume("ghost-topic", 0);
             });
 

@@ -30,6 +30,20 @@ public class BrokerServerTest {
 
     @BeforeEach
     public void setup() throws IOException {
+
+        Path path = Path.of(tempDir.toString());
+
+        // Clean up existing data from previous failed runs
+        if (Files.exists(path)) {
+            Files.walk(path)
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(java.io.File::delete);
+        }
+
+        // recreate the clean directory
+        Files.createDirectories(path);
+
         server = new BrokerServer(testPort, tempDir.toString(), createDefaultConfig());
         // Run server in a background thread so the test isn't blocked
         serverThread = new Thread(() -> server.start());
@@ -197,15 +211,80 @@ public class BrokerServerTest {
         }
         server1.stop();
 
-        // rRestart a fresh server on the same path
+        // restart a fresh server on the same path
         BrokerServer server2 = new BrokerServer(port, dataPath, createDefaultConfig());
         new Thread(server2::start).start();
 
         try (KafkaLiteClient client = new KafkaLiteClient("localhost", port, "my-group-id")) {
+
+
             // If recovery logic works, this topic should be 'discovered' on boot
             // and we can consume from offset 0 immediately.
             assertDoesNotThrow(() -> client.consume("recovery-topic", 0));
         }
         server2.stop();
+    }
+
+    @Test
+    void testHandleGetOffset(@TempDir Path tempDir) throws IOException {
+
+        String dataPath = tempDir.toString();
+
+        // 1. Setup Broker
+        BrokerConfig config = new BrokerConfig();
+        config.setProperty("replication.is.leader", "true");
+        BrokerServer server = new BrokerServer(9090, dataPath, config);
+
+        // Create a topic and append data
+        server.getTopicManager().getOrCreateLog("test-topic").append("key".getBytes(), "val".getBytes());
+
+        // 2. PREPARE THE INPUT PROPERLY
+        ByteArrayOutputStream inputPrepStream = new ByteArrayOutputStream();
+        DataOutputStream inputPrepData = new DataOutputStream(inputPrepStream);
+        inputPrepData.writeUTF("test-topic"); // This writes the 2-byte length + "test-topic"
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(inputPrepStream.toByteArray()));
+
+        // Prepare the output capture
+        ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(outStream);
+
+        // 3. Trigger handler
+        server.handleGetOffset(dis, dos);
+
+        // 4. Verify Output
+        DataInputStream resultIn = new DataInputStream(new ByteArrayInputStream(outStream.toByteArray()));
+        assertEquals(1, resultIn.readLong(), "Should return offset 1 for the existing topic");
+    }
+
+    @Test
+    void testHandleDemoteStateTransition() throws IOException {
+        // 1. Start as a Leader
+        BrokerConfig config = new BrokerConfig();
+        config.setProperty("replication.is.leader", "true");
+        BrokerServer server = new BrokerServer(9091, "data/test-demote", config);
+
+        assertTrue(server.getConfig().isLeader(), "Should initially be leader");
+
+        // 2. Mock the DEMOTE payload: [NewLeaderHost][NewLeaderPort]
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(bos);
+        dos.writeUTF("new-host");
+        dos.writeInt(9999);
+
+        DataInputStream dis = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
+        DataOutputStream serverOut = new DataOutputStream(new ByteArrayOutputStream());
+
+        // 3. Trigger Demotion
+        server.handleDemote(dis, serverOut);
+
+        // 4. Assertions
+        assertFalse(server.getConfig().isLeader(), "Broker should no longer be leader");
+        assertEquals("new-host", server.getConfig().getProperty("replication.leader.host"));
+        assertEquals("9999", server.getConfig().getProperty("replication.leader.port"));
+
+        // Verify ReplicationManager is active (as a follower)
+        assertNotNull(server.getReplicationManager());
+        assertFalse(server.getReplicationManager().isShutdown());
     }
 }
