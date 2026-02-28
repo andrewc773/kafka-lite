@@ -80,6 +80,50 @@ public class IndexManager {
         return new IndexEntry(bestOffset, bestPosition);
     }
 
+    /**
+     * Truncates the index by removing all entries associated with offsets
+     * equal to or greater than the targetOffset.
+     */
+    public synchronized void truncateTo(long targetOffset) throws IOException {
+        long fileSize = indexChannel.size();
+        if (fileSize == 0) return;
+
+        long low = 0;
+        long high = (fileSize / ENTRY_SIZE) - 1;
+        long truncateAtEntryIndex = -1;
+
+        ByteBuffer buffer = ByteBuffer.allocate(ENTRY_SIZE);
+
+        // Binary search to find the 1st entry where offset >= targetOffset
+        while (low <= high) {
+            long mid = low + (high - low) / 2;
+            buffer.clear();
+            indexChannel.read(buffer, mid * ENTRY_SIZE);
+            buffer.flip();
+
+            long offsetAtMid = buffer.getLong();
+
+            if (offsetAtMid >= targetOffset) {
+                // This might be the first entry to delete, but keep looking left
+                truncateAtEntryIndex = mid;
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+
+        // If we found entries to delete
+        if (truncateAtEntryIndex != -1) {
+            long newSize = truncateAtEntryIndex * ENTRY_SIZE;
+            Logger.logStorage("Truncating index " + indexPath.getFileName() +
+                    " to " + newSize + " bytes (Removed " +
+                    (fileSize - newSize) / ENTRY_SIZE + " entries)");
+
+            indexChannel.truncate(newSize);
+            indexChannel.force(true);
+        }
+    }
+
 
     public void close() throws IOException {
         Logger.logStorage("Closing index: " + indexPath.getFileName());
