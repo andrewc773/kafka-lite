@@ -142,7 +142,6 @@ public class ClusterControllerIntegrationTest {
         BrokerAddress addr2 = cluster.startBroker(10002, false); // Follower A (Target winner)
         BrokerAddress addr3 = cluster.startBroker(10003, false); // Follower B (To be redirected)
 
-        // Give them a second to initialize
         Thread.sleep(500);
 
         List<BrokerAddress> followers = List.of(addr2, addr3);
@@ -150,14 +149,12 @@ public class ClusterControllerIntegrationTest {
         Thread controllerThread = new Thread(controller);
         controllerThread.start();
 
-        // 3. THE CHAOS: Kill the Leader
         Logger.logWarning("TEST: Killing Leader on port 9001...");
         cluster.stopBroker(10001);
 
-        // 4. WAIT: 3 failures * 2s sleep = 6 seconds. Let's wait 10s for safety.
+        // 3 failures * 2s sleep = 6 seconds. Let's wait 10s for safety.
         Thread.sleep(10000);
 
-        // 5. VERIFY:
         // Did Follower A (9002) become the new active leader?
         assertTrue(cluster.getBroker(10002).getConfig().isLeader(), "Broker 10002 should have been promoted!");
 

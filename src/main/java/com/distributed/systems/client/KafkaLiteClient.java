@@ -1,5 +1,6 @@
 package com.distributed.systems.client;
 
+import com.distributed.systems.util.FatalClientException;
 import com.distributed.systems.util.Logger;
 import com.distributed.systems.util.Protocol;
 
@@ -89,7 +90,12 @@ public class KafkaLiteClient implements AutoCloseable {
                         resOffset, timestamp, new String(key), new String(val));
             } else {
                 String error = in.readUTF();
-                throw new IOException("Server error: " + error);
+
+                if (error.contains("does not exist")) {
+                    throw new FatalClientException("Server error: " + error);
+                }
+
+                throw new IOException("Retryable server error: " + error);
             }
             return null; // For functional interface compatibility
         });
