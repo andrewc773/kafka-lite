@@ -181,14 +181,17 @@ public class BrokerServer {
                 DataOutputStream out = new DataOutputStream(socket.getOutputStream())
         ) {
 
-            Logger.logNetwork("Client connected: " + socket.getRemoteSocketAddress());
-
+            boolean loggedConnect = false;
             while (true) {
                 String command;
                 try {
                     command = in.readUTF();
                 } catch (EOFException e) {
                     break; //disconnect gracefully
+                }
+                if (!loggedConnect) {
+                    Logger.logNetwork("Client connected: " + socket.getRemoteSocketAddress());
+                    loggedConnect = true;
                 }
 
                 if (command.equalsIgnoreCase(Protocol.CMD_PRODUCE)) {
