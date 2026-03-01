@@ -264,7 +264,7 @@ public class BrokerServerTest {
         config.setProperty("replication.is.leader", "true");
         BrokerServer server = new BrokerServer(9091, "data/test-demote", config);
 
-        assertTrue(server.getConfig().isLeader(), "Should initially be leader");
+        assertEquals(com.distributed.systems.model.BrokerRole.LEADER, server.getCurrentRole(), "Should initially be leader");
 
         // 2. Mock the DEMOTE payload: [NewLeaderHost][NewLeaderPort]
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -279,7 +279,7 @@ public class BrokerServerTest {
         server.handleDemote(dis, serverOut);
 
         // 4. Assertions
-        assertFalse(server.getConfig().isLeader(), "Broker should no longer be leader");
+        assertEquals(com.distributed.systems.model.BrokerRole.FOLLOWER, server.getCurrentRole(), "Broker should no longer be leader");
         assertEquals("new-host", server.getConfig().getProperty("replication.leader.host"));
         assertEquals("9999", server.getConfig().getProperty("replication.leader.port"));
 

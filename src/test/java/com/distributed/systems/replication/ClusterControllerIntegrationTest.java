@@ -156,7 +156,7 @@ public class ClusterControllerIntegrationTest {
         Thread.sleep(10000);
 
         // Did Follower A (9002) become the new active leader?
-        assertTrue(cluster.getBroker(10002).getConfig().isLeader(), "Broker 10002 should have been promoted!");
+        assertEquals(com.distributed.systems.model.BrokerRole.LEADER, cluster.getBroker(10002).getCurrentRole(), "Broker 10002 should have been promoted!");
 
         // Did Follower B (9003) redirect its ReplicationManager to 9002?
         String redirectedHost = cluster.getBroker(10003).getConfig().getProperty("replication.leader.host");
