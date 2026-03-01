@@ -2,14 +2,13 @@ package com.distributed.systems.replication;
 
 import com.distributed.systems.model.BrokerAddress;
 import com.distributed.systems.util.Logger;
-import com.distributed.systems.util.ShellColors;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class CoordinatorApp {
     public static void main(String[] args) {
-        ShellColors.printBanner();
+        Logger.logBanner();
         Logger.logBootstrap("Initializing Kafka-Lite Standalone Coordinator...");
 
         BrokerAddress primary = new BrokerAddress("localhost", 9001);

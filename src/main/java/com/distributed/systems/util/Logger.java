@@ -7,10 +7,21 @@ public class Logger {
     private static final String YELLOW = "\u001B[33m"; // Janitor
     private static final String BLUE = "\u001B[34m";   // Storage/Segments
     private static final String PURPLE = "\u001B[35m"; // Bootstrap/Config
-    private static final String CYAN = "\u001B[36m";   // Startup
+    private static final String CYAN = "\u001B[36m";   // Startup/Banner
     private static final String RED = "\u001B[31m";    // Error
     private static final String ORANGE = "\u001B[38;5;208m";
+    public static final String BOLD = "\u001B[1m";
     public static final String BOLD_YELLOW = "\033[1;33m";
+
+    public static void logBanner() {
+        System.out.println(CYAN + BOLD + "========================================");
+        System.out.println("   _  __      ___ _             _      ");
+        System.out.println("  | |/ /__ _ / _| |__ __ _     | |__   ");
+        System.out.println("  | ' </ _` |  _| / / _` |_____| / /   ");
+        System.out.println("  |_|\\_\\__,_|_| |_|\\_\\__,_|_____|_|\\_\\ ");
+        System.out.println("      KAFKA-LITE DISTRIBUTED PLATFORM   ");
+        System.out.println("========================================" + RESET);
+    }
 
     public static void logBootstrap(String message) {
         System.out.println(PURPLE + "[BOOTSTRAP] " + RESET + message);
