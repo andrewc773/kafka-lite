@@ -215,4 +215,68 @@ public class LogTest {
         assertNotNull(record);
         assertEquals("key1", new String(record.key()));
     }
+
+    @Test
+    public void testLogTruncationWithSegmentPurge() throws IOException {
+        BrokerConfig truncateConfig = new BrokerConfig(100, 60000, 4096, 30000);
+        Log log = new Log(tempDir, truncateConfig);
+        byte[] key = "key".getBytes();
+
+        // Create enough data to force multiple segment files
+        for (int i = 0; i < 9; i++) {
+            log.append(key, ("message-number-" + i).getBytes());
+        }
+
+        assertTrue(log.getSegmentCount() >= 3);
+
+        // Truncate logic must identify the floorEntry and clear the tailMap
+        log.truncate(4);
+
+        assertEquals(4, log.getNextOffset());
+        assertEquals(3, log.getLastOffset());
+
+        try (Stream<Path> files = Files.list(tempDir)) {
+            long dataFileCount = files.filter(p -> p.toString().endsWith(".data")).count();
+            // Verifies physical deletion of segments starting after the truncation point
+            assertEquals(2, dataFileCount);
+        }
+
+        assertNotNull(log.read(0));
+        assertNotNull(log.read(3));
+
+        // Verifies the pointer reset allows immediate reuse of the truncated offset
+        long finalOffset = log.append(key, "new-data-at-4".getBytes());
+        assertEquals(4, finalOffset);
+
+        log.close();
+    }
+
+    @Test
+    public void testTruncateToZero() throws IOException {
+        Log log = new Log(tempDir, createDefaultConfig());
+
+        for (int i = 0; i < 10; i++) {
+            log.append("k".getBytes(), "v".getBytes());
+        }
+
+        log.truncate(0);
+
+        assertEquals(0, log.getNextOffset());
+        assertEquals(1, log.getSegmentCount());
+
+        try (Stream<Path> files = Files.list(tempDir)) {
+            long totalSize = files.filter(p -> p.toString().endsWith(".data"))
+                    .mapToLong(p -> {
+                        try {
+                            return Files.size(p);
+                        } catch (IOException e) {
+                            return 0;
+                        }
+                    }).sum();
+            // Verifies that channel.truncate(0) physically cleared the remaining active segment
+            assertEquals(0, totalSize);
+        }
+
+        log.close();
+    }
 }

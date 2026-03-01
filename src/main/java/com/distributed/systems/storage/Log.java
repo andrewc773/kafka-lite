@@ -216,7 +216,7 @@ public class Log {
         Logger.logWarning("!!! TRUNCATION TRIGGERED !!! Rewinding log to offset: " + targetOffset);
 
         // identify segments to delete entirely (those starting after the target)
-        var tailMap = segments.tailMap(targetOffset, false);
+        var tailMap = segments.tailMap(targetOffset, true);
         var iterator = tailMap.entrySet().iterator();
 
         while (iterator.hasNext()) {
