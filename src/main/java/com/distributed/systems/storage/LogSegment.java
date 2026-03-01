@@ -203,6 +203,66 @@ public class LogSegment {
         return new LogRecord(offset, timestamp, keyBuf.array(), valBuf.array());
     }
 
+    /**
+     * Scans the segment to find the physical byte position where 'targetOffset' begins.
+     */
+    private long findByteOffsetFor(long targetOffset) throws IOException {
+        // If the target is at or before the very beginning of this segment, byte position is 0
+        if (targetOffset <= baseOffset) return 0;
+
+        long tempPos = 0;
+        long tempOffset = baseOffset;
+        long fileSize = channel.size();
+
+        ByteBuffer headerBuf = ByteBuffer.allocate(12); // TS (8) + KeyLen (4)
+        ByteBuffer valLenBuf = ByteBuffer.allocate(4);
+
+        while (tempPos + 12 <= fileSize) {
+            if (tempOffset == targetOffset) {
+                return tempPos;
+            }
+
+            headerBuf.clear();
+            channel.read(headerBuf, tempPos);
+            headerBuf.flip();
+            headerBuf.getLong(); // skip timestamp
+            int keyLen = headerBuf.getInt();
+
+            long valLenPos = tempPos + 12 + keyLen;
+            if (valLenPos + 4 > fileSize) break;
+
+            valLenBuf.clear();
+            channel.read(valLenBuf, valLenPos);
+            valLenBuf.flip();
+            int valLen = valLenBuf.getInt();
+
+            tempPos = valLenPos + 4 + valLen;
+            tempOffset++;
+        }
+        return tempPos;
+    }
+
+    public synchronized void truncate(long targetOffset) throws IOException {
+        // find where to cut physically
+        long physicalPosition = findByteOffsetFor(targetOffset);
+        
+        channel.truncate(physicalPosition);
+        channel.force(true);
+
+        // clear the Index
+        indexManager.truncateTo(targetOffset);
+
+        // critical: if we don't update these, the next append will write to the old EOF
+        this.currentPosition = physicalPosition;
+        this.currentOffset = targetOffset;
+        this.bytesSinceLastIndexEntry = 0; // Reset index counter
+
+        channel.position(this.currentPosition);
+
+        Logger.logStorage("Segment " + baseOffset + " physically truncated to " + physicalPosition + " bytes. Next offset: " + currentOffset);
+    }
+
+
     public void close() throws IOException {
         Logger.logStorage("Closing file channel: " + dataPath.getFileName());
         channel.close();

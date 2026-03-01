@@ -30,13 +30,28 @@ public class ReplicaFetcher implements Runnable {
                  DataOutputStream out = new DataOutputStream(socket.getOutputStream());
                  DataInputStream in = new DataInputStream(socket.getInputStream())) {
 
-                //Determine where we left off
-                long nextOffset = localLog.getNextOffset();
+                // Ensure our local log isn't ahead of the leader
+                long localNextOffset = localLog.getNextOffset();
+
+                out.writeUTF(Protocol.CMD_GET_OFFSET);
+                out.writeUTF(topic);
+                out.flush();
+
+                long leaderLastOffset = in.readLong();
+
+                if (localNextOffset > (leaderLastOffset + 1)) {
+                    Logger.logWarning("DIVERGENCE: Local log is at " + localNextOffset +
+                            " but Leader is at " + leaderLastOffset + ". Truncating...");
+
+                    // Rewind to exactly where the leader is
+                    localLog.truncate(leaderLastOffset + 1);
+                    continue; // Restart the loop with the corrected offset
+                }
 
                 // Ask the leader for a batch
                 out.writeUTF(Protocol.CMD_REPLICA_FETCH);
                 out.writeUTF(topic);
-                out.writeLong(nextOffset);
+                out.writeLong(localLog.getNextOffset());
                 out.flush();
 
                 int count = in.readInt();

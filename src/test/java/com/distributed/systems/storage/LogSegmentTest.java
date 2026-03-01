@@ -193,4 +193,69 @@ public class LogSegmentTest {
 
         segment.close();
     }
+
+    @Test
+    public void testTruncateToMidSegment() throws IOException {
+        Path logPath = tempDir.resolve("truncate_mid.data");
+        LogSegment segment = new LogSegment(logPath, 0, MAX_SEGMENT_SIZE);
+
+        segment.append(defaultKey, "Message 0".getBytes());
+        segment.append(defaultKey, "Message 1".getBytes());
+        segment.append(defaultKey, "Message 2".getBytes());
+
+        segment.truncate(1);
+
+        assertEquals(0, segment.getLastOffset(), "Last offset should be 0 after truncating at 1");
+        assertNotNull(segment.read(0), "Message 0 should still exist");
+        assertNull(segment.read(1), "Message 1 should be gone");
+
+        long newOffset = segment.append(defaultKey, "New Message 1".getBytes());
+        assertEquals(1, newOffset, "Next append should reuse offset 1");
+        assertEquals("New Message 1", new String(segment.read(1).value()));
+
+        segment.close();
+    }
+
+    @Test
+    public void testTruncateEntireSegment() throws IOException {
+        Path logPath = tempDir.resolve("truncate_all.data");
+        LogSegment segment = new LogSegment(logPath, 100, MAX_SEGMENT_SIZE);
+
+        segment.append(defaultKey, "Ghost 100".getBytes());
+        segment.append(defaultKey, "Ghost 101".getBytes());
+
+        // Truncate to the base offset
+        segment.truncate(100);
+
+        assertEquals(99, segment.getLastOffset(), "Last offset should reset to baseOffset - 1");
+        assertEquals(0, Files.size(logPath), "File should be physically empty");
+
+        assertEquals(100, segment.append(defaultKey, "Clean 100".getBytes()));
+
+        segment.close();
+    }
+
+    @Test
+    public void testTruncateWithIndexAlignment() throws IOException {
+        Path logPath = tempDir.resolve("truncate_index.data");
+        // Force an index entry every 10 bytes to ensure we have bookmarks
+        LogSegment segment = new LogSegment(logPath, 0, 10);
+
+        for (int i = 0; i < 50; i++) {
+            segment.append(defaultKey, ("Msg-" + i).getBytes());
+        }
+
+        // Truncate in the middle
+        segment.truncate(25);
+
+        // Verify that we didn't break the index lookup for the remaining records
+        LogRecord record = segment.read(10);
+        assertNotNull(record);
+        assertEquals("Msg-10", new String(record.value()));
+
+        // Ensure we can't read past the truncation point
+        assertNull(segment.read(25));
+
+        segment.close();
+    }
 }
