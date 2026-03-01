@@ -2,7 +2,7 @@ package com.distributed.systems.util;
 
 public class Logger {
     // ANSI Color Codes
-    private static final String RESET = "\u001B[0m";
+    public static final String RESET = "\u001B[0m";
     private static final String GREEN = "\u001B[32m";  // Network
     private static final String YELLOW = "\u001B[33m"; // Janitor
     private static final String BLUE = "\u001B[34m";   // Storage/Segments

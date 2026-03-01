@@ -50,6 +50,8 @@ public class ClusterController implements Runnable {
                 }
                 consecutiveFailures = 0;
             }
+            printClusterStatus();
+
             try {
                 Thread.sleep(2000); // check every 2 seconds
             } catch (InterruptedException e) {
@@ -81,7 +83,7 @@ public class ClusterController implements Runnable {
         BrokerAddress winner = null;
         long highestOffset = -1;
 
-        // 1. Try to find the node with the most data
+        // Try to find the node with the most data
         for (BrokerAddress candidate : followers) {
             long offset = fetchOffsetFromBroker(candidate, "p1");
             if (offset > highestOffset) {
@@ -90,8 +92,9 @@ public class ClusterController implements Runnable {
             }
         }
 
-        // 2. SAFETY NET: If nobody has "p1" (everyone returned -1 or 0)
-        // Just pick the first candidate that is actually online.
+        // SAFETY NET: If nobody has "p1" (everyone returned -1 or 0)
+        // Just pick the first candidate that is actually online. For now, this is always
+        // what we default to.
         if (winner == null) {
             for (BrokerAddress candidate : followers) {
                 if (isAlive(candidate.host(), candidate.port())) {
@@ -197,18 +200,23 @@ public class ClusterController implements Runnable {
         }
     }
 
-    private void promote(String host, int port) {
-        try (Socket s = new Socket(host, port);
-             DataOutputStream out = new DataOutputStream(s.getOutputStream());
-             DataInputStream in = new java.io.DataInputStream(s.getInputStream())) {
-            out.writeUTF(Protocol.CMD_PROMOTE);
-            out.flush();
 
-            String response = in.readUTF();
-            Logger.logBootstrap("Promotion result from " + host + ":" + port + " -> " + response);
+    private void printClusterStatus() {
+        System.out.println("\n" + Logger.BOLD_YELLOW + "--- Cluster Health Report ---" + Logger.RESET);
+        System.out.printf("%-20s | %-10s | %-10s%n", "Broker", "Role", "Status");
+        System.out.println("---------------------------------------------");
 
-        } catch (IOException e) {
-            Logger.logError("Failed to promote follower: " + e.getMessage());
+        // Check the leader
+        String leaderStatus = isAlive(leaderAddress.host(), leaderAddress.port()) ? "ALIVE" : "DEAD";
+        String leaderRole = activeLeader.equals(leaderAddress) ? "LEADER" : "ZOMBIE";
+        System.out.printf("%-20s | %-10s | %-10s%n", leaderAddress, leaderRole, leaderStatus);
+
+        // Check the followers
+        for (BrokerAddress f : followers) {
+            String fStatus = isAlive(f.host(), f.port()) ? "ALIVE" : "DEAD";
+            String fRole = activeLeader.equals(f) ? "LEADER" : "FOLLOWER";
+            System.out.printf("%-20s | %-10s | %-10s%n", f, fRole, fStatus);
         }
+        System.out.println("---------------------------------------------\n");
     }
 }

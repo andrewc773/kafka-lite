@@ -15,7 +15,6 @@ public class CoordinatorApp {
 
         List<BrokerAddress> followers = new ArrayList<>();
         followers.add(new BrokerAddress("localhost", 9002));
-        followers.add(new BrokerAddress("localhost", 9003));
 
         ClusterController controller = new ClusterController(primary, followers);
         Thread controllerThread = new Thread(controller, "Coordinator-Main");
