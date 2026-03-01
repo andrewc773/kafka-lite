@@ -2,43 +2,47 @@ package com.distributed.systems;
 
 import com.distributed.systems.config.BrokerConfig;
 import com.distributed.systems.server.BrokerServer;
+import com.distributed.systems.util.Logger;
 
 import java.nio.file.Paths;
 
 public class Main {
     public static void main(String[] args) {
+        // Default to 9001 if no port is provided
+        int port = 9001;
+        if (args.length >= 1) {
+            try {
+                port = Integer.parseInt(args[0]);
+            } catch (NumberFormatException e) {
+                Logger.logError("Invalid port provided. Usage: java -cp ... Main <port> [dataDir]");
+                System.exit(1);
+            }
+        }
+
+        // Default data directory based on port to avoid conflicts
+        String dataDir = (args.length >= 2) ? args[1] : "data/broker-" + port;
+
+        Logger.logBanner();
+
         try {
-            // Define the port (9092 is the standard for Kafka)
-            int port = 9092;
+            BrokerConfig config = new BrokerConfig();
+            BrokerServer server = new BrokerServer(port, dataDir, config);
 
-            String dataDir = "kafka-logs";
-
-            System.out.println("\u001B[36m" + "=".repeat(40));
-            System.out.println("       KAFKA-LITE BROKER v1.0");
-            System.out.println("=".repeat(40) + "\u001B[0m");
-
-            // Internally creating log manager and socket
-            BrokerServer server = new BrokerServer(port, dataDir, new BrokerConfig());
-
-            System.out.printf("[BOOT] Port: %d%n", port);
-            System.out.printf("[BOOT] Data Directory: %s%n", Paths.get(dataDir).toAbsolutePath());
-
-
-            System.out.println("\u001B[32m[READY] Broker is online and awaiting connections...\u001B[0m");
-            System.out.println("-".repeat(40));
+            Logger.logInfo("Node Identity: localhost:" + port);
+            Logger.logInfo("Disk Path: " + Paths.get(dataDir).toAbsolutePath());
+            Logger.logBootstrap("Broker is initializing storage and networking...");
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("\n[SHUTDOWN] Shutdown signal received...");
+                Logger.logWarning("Shutdown signal received. Closing segments and socket...");
                 server.stop();
-                System.out.println("[SHUTDOWN] Clean exit. Goodbye!");
+                Logger.logInfo("Safe exit completed.");
             }));
 
-            //stays alive w/ while(true) block
+            // blocking call that starts the socket listener
             server.start();
 
-
         } catch (Exception e) {
-            System.err.println("Critical Failure: Could not start broker - " + e.getMessage());
+            Logger.logError("Critical start-up failure: " + e.getMessage());
             e.printStackTrace();
         }
     }
