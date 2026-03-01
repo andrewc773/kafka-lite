@@ -1,6 +1,7 @@
 package com.distributed.systems.server;
 
 import com.distributed.systems.config.BrokerConfig;
+import com.distributed.systems.model.BrokerRole;
 import com.distributed.systems.replication.ReplicationManager;
 import com.distributed.systems.storage.Log;
 import com.distributed.systems.storage.LogRecord;
@@ -30,6 +31,7 @@ public class BrokerServer {
     private final int port;
     private final BrokerConfig config;
     private ReplicationManager replicationManager;
+    private BrokerRole currentRole;
 
     private volatile boolean running = true;
 
@@ -43,6 +45,7 @@ public class BrokerServer {
         this.offsetManager = new OffsetManager(this.topicManager);
         this.threadPool = Executors.newFixedThreadPool(MAX_THREADS);
         this.replicationManager = new ReplicationManager(this.topicManager, config);
+        this.currentRole = config.isLeader() ? BrokerRole.LEADER : BrokerRole.FOLLOWER;
     }
 
     public void start() {
@@ -196,7 +199,8 @@ public class BrokerServer {
 
                 if (command.equalsIgnoreCase(Protocol.CMD_PRODUCE)) {
                     // Only leaders accept writes
-                    if (!config.isLeader()) {
+                    if (currentRole != BrokerRole.LEADER) {
+                        Logger.logWarning("Rejected PRODUCE: I am currently a FOLLOWER.");
                         out.writeLong(-1); // Signal error offset
                         out.writeUTF("ERR_NOT_LEADER");
                         out.flush();
@@ -285,11 +289,12 @@ public class BrokerServer {
 
     /*Demotes a previous leader to a follower node*/
     public void demoteToFollower(String leaderHost, int leaderPort) {
-        if (!config.isLeader()) {
+        if (currentRole != BrokerRole.LEADER) {
             return;
         }
         Logger.logBootstrap(">>> DEMOTION: Transitioning from LEADER to FOLLOWER <<<");
 
+        currentRole = BrokerRole.FOLLOWER;
         config.setProperty("replication.is.leader", "false");
         config.setProperty("replication.leader.host", leaderHost);
         config.setProperty("replication.leader.port", String.valueOf(leaderPort));
@@ -360,12 +365,13 @@ public class BrokerServer {
     }
 
     public void promoteToLeader() {
-        if (config.isLeader()) {
+        if (currentRole == BrokerRole.LEADER) {
             return;
         }
 
         Logger.logBootstrap(">>> PROMOTION TRIGGERED: Transitioning to LEADER mode <<<");
 
+        currentRole = BrokerRole.LEADER;
         // 1. Update Config
         config.setProperty("replication.is.leader", "true");
 
@@ -385,6 +391,10 @@ public class BrokerServer {
 
     public BrokerConfig getConfig() {
         return this.config;
+    }
+
+    public BrokerRole getCurrentRole() {
+        return this.currentRole;
     }
 
     private void printBanner() {
