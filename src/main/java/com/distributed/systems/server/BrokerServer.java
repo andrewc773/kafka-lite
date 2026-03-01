@@ -376,7 +376,7 @@ public class BrokerServer {
         return this.replicationManager;
     }
 
-    protected TopicManager getTopicManager() {
+    public TopicManager getTopicManager() {
         return this.topicManager;
     }
 
