@@ -19,7 +19,6 @@ public class KafkaLiteClient implements AutoCloseable {
     private final String groupId;
     private DataOutputStream out;
     private DataInputStream in;
-    private long currentOffset = 0;
 
     // Background scheduler for auto-committing
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();

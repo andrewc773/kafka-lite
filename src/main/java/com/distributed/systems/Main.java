@@ -20,12 +20,18 @@ public class Main {
         }
 
         // Default data directory based on port to avoid conflicts
-        String dataDir = (args.length >= 2) ? args[1] : "data/broker-" + port;
+        String dataDir = "data/broker-" + port;
+        int argIndex = 1;
+        if (args.length >= 2 && !isRoleArg(args[1])) {
+            dataDir = args[1];
+            argIndex = 2;
+        }
 
         Logger.logBanner();
 
         try {
             BrokerConfig config = new BrokerConfig();
+            applyRoleArgs(config, args, argIndex);
             BrokerServer server = new BrokerServer(port, dataDir, config);
 
             Logger.logInfo("Node Identity: localhost:" + port);
@@ -45,5 +51,37 @@ public class Main {
             Logger.logError("Critical start-up failure: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private static boolean isRoleArg(String arg) {
+        return "leader".equalsIgnoreCase(arg) || "follower".equalsIgnoreCase(arg);
+    }
+
+    private static void applyRoleArgs(BrokerConfig config, String[] args, int argIndex) {
+        if (args.length <= argIndex) {
+            return;
+        }
+
+        String role = args[argIndex];
+        if (!isRoleArg(role)) {
+            return;
+        }
+
+        if ("leader".equalsIgnoreCase(role)) {
+            config.setProperty("replication.is.leader", "true");
+            return;
+        }
+
+        config.setProperty("replication.is.leader", "false");
+
+        String leaderHost = (args.length > argIndex + 1) ? args[argIndex + 1] : "localhost";
+        String leaderPort = (args.length > argIndex + 2) ? args[argIndex + 2] : "9001";
+
+        if (args.length <= argIndex + 2) {
+            Logger.logWarning("Follower started without leader host/port; defaulting to " + leaderHost + ":" + leaderPort);
+        }
+
+        config.setProperty("replication.leader.host", leaderHost);
+        config.setProperty("replication.leader.port", leaderPort);
     }
 }
